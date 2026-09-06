@@ -25,14 +25,26 @@ export const WebtoonMode: React.FC<WebtoonModeProps> = ({
   // Zoom & Pan state
   const [scale, setScale] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [origin, setOrigin] = useState({ x: 0, y: 0 });
   const [isAnimating, setIsAnimating] = useState(false);
+
+  // Synchronous refs for smooth 60-120fps gesture calculations
+  const scaleRef = useRef(1);
+  const panRef = useRef({ x: 0, y: 0 });
+  const originRef = useRef({ x: 0, y: 0 });
+
+  const applyTransform = useCallback((newScale: number, newX: number, newY: number, animate: boolean) => {
+    scaleRef.current = newScale;
+    panRef.current = { x: newX, y: newY };
+    setScale(newScale);
+    setPan({ x: newX, y: newY });
+    setIsAnimating(animate);
+  }, []);
 
   // Jump to target page when slider or chapter changes externally
   useEffect(() => {
-    // Reset zoom on chapter or target page change
-    if (scale > 1) {
-      setScale(1);
-      setPan({ x: 0, y: 0 });
+    if (scaleRef.current > 1.05) {
+      applyTransform(1, 0, 0, false);
     }
 
     if (targetPage === undefined || targetPage < 1) return;
@@ -46,12 +58,12 @@ export const WebtoonMode: React.FC<WebtoonModeProps> = ({
         isProgrammaticScroll.current = false;
       }, 200);
     }
-  }, [targetPage]);
+  }, [targetPage, applyTransform]);
 
-  // Throttled scroll listener to calculate visible page without triggering feedback loops
+  // Throttled scroll listener to calculate visible page
   const lastReportedPage = useRef<number>(1);
   const handleScroll = useCallback(() => {
-    if (isProgrammaticScroll.current || !containerRef.current || scale > 1.05) return;
+    if (isProgrammaticScroll.current || !containerRef.current || scaleRef.current > 1.05) return;
 
     const container = containerRef.current;
     const scrollTop = container.scrollTop;
@@ -72,14 +84,14 @@ export const WebtoonMode: React.FC<WebtoonModeProps> = ({
         }
       }
     }
-  }, [onPageVisible, scale]);
+  }, [onPageVisible]);
 
   const clampPan = (x: number, y: number, currentScale: number) => {
     if (currentScale <= 1.02) {
       return { x: 0, y: 0 };
     }
-    const maxX = ((currentScale - 1) * window.innerWidth) / 2;
-    const maxY = ((currentScale - 1) * window.innerHeight) / 2;
+    const maxX = Math.max(0, ((currentScale - 1) * window.innerWidth) / 2);
+    const maxY = Math.max(0, ((currentScale - 1) * (containerRef.current?.clientHeight || window.innerHeight)) / 2);
     return {
       x: Math.max(-maxX, Math.min(maxX, x)),
       y: Math.max(-maxY, Math.min(maxY, y))
@@ -87,23 +99,35 @@ export const WebtoonMode: React.FC<WebtoonModeProps> = ({
   };
 
   const resetZoom = () => {
-    setIsAnimating(true);
-    setScale(1);
-    setPan({ x: 0, y: 0 });
+    applyTransform(1, 0, 0, true);
   };
 
-  // Touch gesture handling
-  const touchStartX = useRef(0);
-  const touchStartY = useRef(0);
-  const startPanRef = useRef({ x: 0, y: 0 });
-  const isDragging = useRef(false);
-  const isPinching = useRef(false);
-  const pinchStartDist = useRef(0);
-  const pinchStartScale = useRef(1);
+  // Touch gesture tracking ref
+  const gestureRef = useRef<{
+    activeTouches: number;
+    startX: number;
+    startY: number;
+    startPan: { x: number; y: number };
+    startDist: number;
+    startScale: number;
+    startMidX: number;
+    startMidY: number;
+    hasMoved: boolean;
+  }>({
+    activeTouches: 0,
+    startX: 0,
+    startY: 0,
+    startPan: { x: 0, y: 0 },
+    startDist: 0,
+    startScale: 1,
+    startMidX: 0,
+    startMidY: 0,
+    hasMoved: false
+  });
+
   const lastTapRef = useRef<{ time: number; x: number; y: number }>({ time: 0, x: 0, y: 0 });
   const singleTapTimerRef = useRef<any>(null);
 
-  // Clean up timer on unmount
   useEffect(() => {
     return () => {
       if (singleTapTimerRef.current) {
@@ -112,117 +136,174 @@ export const WebtoonMode: React.FC<WebtoonModeProps> = ({
     };
   }, []);
 
+  // Calculate local coordinate relative to inner content
+  const calculateOrigin = (clientX: number, clientY: number) => {
+    if (!containerRef.current) return { x: window.innerWidth / 2, y: 0 };
+    const rect = containerRef.current.getBoundingClientRect();
+    const scrollTop = containerRef.current.scrollTop;
+    const ox = clientX - rect.left;
+    const oy = scrollTop + (clientY - rect.top);
+    return { x: ox, y: oy };
+  };
+
+  // TOUCH START
   const handleTouchStart = (e: React.TouchEvent) => {
     isProgrammaticScroll.current = false;
     setIsAnimating(false);
+    const g = gestureRef.current;
+    g.activeTouches = e.touches.length;
 
     if (e.touches.length === 2) {
-      // 2 fingers pinch
-      isPinching.current = true;
       const t1 = e.touches[0];
       const t2 = e.touches[1];
-      pinchStartDist.current = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
-      pinchStartScale.current = scale;
-      startPanRef.current = { ...pan };
-      isDragging.current = true;
+      g.startDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+      g.startScale = scaleRef.current;
+      g.startMidX = (t1.clientX + t2.clientX) / 2;
+      g.startMidY = (t1.clientY + t2.clientY) / 2;
+      g.startPan = { ...panRef.current };
+      g.hasMoved = false;
+
+      // If starting zoom from scale = 1, anchor transformOrigin to two-finger midpoint
+      if (scaleRef.current <= 1.05) {
+        const o = calculateOrigin(g.startMidX, g.startMidY);
+        originRef.current = o;
+        setOrigin(o);
+      }
 
       if (singleTapTimerRef.current) {
         clearTimeout(singleTapTimerRef.current);
         singleTapTimerRef.current = null;
       }
     } else if (e.touches.length === 1) {
-      isPinching.current = false;
-      touchStartX.current = e.touches[0].clientX;
-      touchStartY.current = e.touches[0].clientY;
-      startPanRef.current = { ...pan };
-      isDragging.current = false;
+      const t = e.touches[0];
+      g.startX = t.clientX;
+      g.startY = t.clientY;
+      g.startPan = { ...panRef.current };
+      g.hasMoved = false;
     }
   };
 
+  // TOUCH MOVE
   const handleTouchMove = (e: React.TouchEvent) => {
-    if (e.touches.length === 2 && isPinching.current) {
+    const g = gestureRef.current;
+
+    // Seamless touch count transition without jumping
+    if (e.touches.length !== g.activeTouches) {
+      g.activeTouches = e.touches.length;
+      if (e.touches.length === 1) {
+        const t = e.touches[0];
+        g.startX = t.clientX;
+        g.startY = t.clientY;
+        g.startPan = { ...panRef.current };
+        return;
+      } else if (e.touches.length === 2) {
+        const t1 = e.touches[0];
+        const t2 = e.touches[1];
+        g.startDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+        g.startScale = scaleRef.current;
+        g.startMidX = (t1.clientX + t2.clientX) / 2;
+        g.startMidY = (t1.clientY + t2.clientY) / 2;
+        g.startPan = { ...panRef.current };
+        return;
+      }
+    }
+
+    if (e.touches.length === 2) {
       const t1 = e.touches[0];
       const t2 = e.touches[1];
       const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+      const midX = (t1.clientX + t2.clientX) / 2;
+      const midY = (t1.clientY + t2.clientY) / 2;
 
-      if (pinchStartDist.current > 0) {
-        isDragging.current = true;
-        const targetScale = Math.min(3.0, Math.max(1, pinchStartScale.current * (dist / pinchStartDist.current)));
-        setScale(targetScale);
+      if (g.startDist > 0) {
+        g.hasMoved = true;
+        const scaleFactor = dist / g.startDist;
+        const targetScale = Math.min(3.2, Math.max(1, g.startScale * scaleFactor));
 
-        if (targetScale <= 1.02) {
-          setPan({ x: 0, y: 0 });
-        } else {
-          setPan((prev) => clampPan(prev.x, prev.y, targetScale));
-        }
+        const deltaMidX = midX - g.startMidX;
+        const deltaMidY = midY - g.startMidY;
+        const rawX = g.startPan.x + deltaMidX;
+        const rawY = g.startPan.y + deltaMidY;
+
+        const clamped = clampPan(rawX, rawY, targetScale);
+        applyTransform(targetScale, clamped.x, clamped.y, false);
       }
-    } else if (e.touches.length === 1 && !isPinching.current) {
-      const dx = e.touches[0].clientX - touchStartX.current;
-      const dy = e.touches[0].clientY - touchStartY.current;
+    } else if (e.touches.length === 1) {
+      const t = e.touches[0];
+      const diffX = t.clientX - g.startX;
+      const diffY = t.clientY - g.startY;
 
-      if (Math.hypot(dx, dy) > 8) {
-        isDragging.current = true;
+      if (Math.hypot(diffX, diffY) > 6) {
+        g.hasMoved = true;
       }
 
-      if (scale > 1.05) {
-        // Pan 2D image layer when zoomed in
-        const nextX = startPanRef.current.x + dx;
-        const nextY = startPanRef.current.y + dy;
-        setPan(clampPan(nextX, nextY, scale));
+      if (scaleRef.current > 1.05) {
+        // In zoomed state, single finger pans in 2D
+        const rawX = g.startPan.x + diffX;
+        const rawY = g.startPan.y + diffY;
+        const clamped = clampPan(rawX, rawY, scaleRef.current);
+        applyTransform(scaleRef.current, clamped.x, clamped.y, false);
       }
     }
   };
 
+  // TOUCH END
   const handleTouchEnd = (e: React.TouchEvent) => {
-    if (isPinching.current) {
-      if (e.touches.length === 0) {
-        isPinching.current = false;
-        setIsAnimating(true);
-        if (scale < 1.05) {
-          setScale(1);
-          setPan({ x: 0, y: 0 });
-        } else {
-          setPan((prev) => clampPan(prev.x, prev.y, scale));
-        }
-      }
+    const g = gestureRef.current;
+
+    if (e.touches.length === 1) {
+      // 1 finger remaining, re-anchor smoothly
+      g.activeTouches = 1;
+      const t = e.touches[0];
+      g.startX = t.clientX;
+      g.startY = t.clientY;
+      g.startPan = { ...panRef.current };
       return;
     }
 
-    if (!isDragging.current && e.changedTouches.length === 1) {
-      // Tap or Double Tap
-      const touch = e.changedTouches[0];
-      const now = Date.now();
-      const lastTap = lastTapRef.current;
-      const distFromLastTap = Math.hypot(touch.clientX - lastTap.x, touch.clientY - lastTap.y);
+    if (e.touches.length === 0) {
+      g.activeTouches = 0;
 
-      if (now - lastTap.time < 280 && distFromLastTap < 40) {
-        // Double tap confirmed! Cancel pending single tap
-        if (singleTapTimerRef.current) {
-          clearTimeout(singleTapTimerRef.current);
-          singleTapTimerRef.current = null;
-        }
-
-        setIsAnimating(true);
-        if (scale > 1.05) {
-          // Reset zoom
-          setScale(1);
-          setPan({ x: 0, y: 0 });
-        } else {
-          // Zoom into double-tap spot
-          const targetScale = 2.0;
-          const focalX = (window.innerWidth / 2 - touch.clientX) * (targetScale - 1);
-          const focalY = (window.innerHeight / 2 - touch.clientY) * (targetScale - 1);
-          setScale(targetScale);
-          setPan(clampPan(focalX, focalY, targetScale));
-        }
-        lastTapRef.current = { time: 0, x: 0, y: 0 };
+      if (scaleRef.current < 1.05) {
+        applyTransform(1, 0, 0, true);
       } else {
-        // First tap -> schedule single-tap HUD toggle
-        lastTapRef.current = { time: now, x: touch.clientX, y: touch.clientY };
-        singleTapTimerRef.current = setTimeout(() => {
-          onToggleHUD();
-          singleTapTimerRef.current = null;
-        }, 260);
+        const clamped = clampPan(panRef.current.x, panRef.current.y, scaleRef.current);
+        applyTransform(scaleRef.current, clamped.x, clamped.y, true);
+      }
+
+      // If user tapped without dragging -> Tap or Double-tap
+      if (!g.hasMoved && e.changedTouches.length === 1) {
+        const touch = e.changedTouches[0];
+        const now = Date.now();
+        const lastTap = lastTapRef.current;
+        const distFromLastTap = Math.hypot(touch.clientX - lastTap.x, touch.clientY - lastTap.y);
+
+        if (now - lastTap.time < 280 && distFromLastTap < 40) {
+          // Double Tap!
+          if (singleTapTimerRef.current) {
+            clearTimeout(singleTapTimerRef.current);
+            singleTapTimerRef.current = null;
+          }
+
+          if (scaleRef.current > 1.05) {
+            // Reset to 1x
+            applyTransform(1, 0, 0, true);
+          } else {
+            // Zoom to 2.0x centered at double tap location
+            const o = calculateOrigin(touch.clientX, touch.clientY);
+            originRef.current = o;
+            setOrigin(o);
+            applyTransform(2.0, 0, 0, true);
+          }
+          lastTapRef.current = { time: 0, x: 0, y: 0 };
+        } else {
+          // First tap -> single tap timer
+          lastTapRef.current = { time: now, x: touch.clientX, y: touch.clientY };
+          singleTapTimerRef.current = setTimeout(() => {
+            onToggleHUD();
+            singleTapTimerRef.current = null;
+          }, 260);
+        }
       }
     }
   };
@@ -232,14 +313,9 @@ export const WebtoonMode: React.FC<WebtoonModeProps> = ({
     if (e.ctrlKey) {
       e.preventDefault();
       const delta = -e.deltaY * 0.002;
-      const newScale = Math.min(3.0, Math.max(1, scale + delta));
-      setIsAnimating(false);
-      setScale(newScale);
-      if (newScale <= 1.02) {
-        setPan({ x: 0, y: 0 });
-      } else {
-        setPan((prev) => clampPan(prev.x, prev.y, newScale));
-      }
+      const newScale = Math.min(3.2, Math.max(1, scaleRef.current + delta));
+      const clamped = clampPan(panRef.current.x, panRef.current.y, newScale);
+      applyTransform(newScale, clamped.x, clamped.y, false);
     }
   };
 
@@ -250,21 +326,23 @@ export const WebtoonMode: React.FC<WebtoonModeProps> = ({
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
+      onTouchCancel={handleTouchEnd}
       onWheel={handleWheel}
       className={`w-full h-full select-none ${
-        scale > 1.05 ? 'overflow-hidden' : 'overflow-y-auto overscroll-y-contain touch-pan-y'
+        scale > 1.05 ? 'overflow-hidden' : 'overflow-y-auto overscroll-y-contain'
       }`}
       style={{
         WebkitOverflowScrolling: 'touch',
-        scrollBehavior: 'auto'
+        scrollBehavior: 'auto',
+        touchAction: scale > 1.05 ? 'none' : 'pan-y'
       }}
     >
       <div
         className="w-full max-w-2xl mx-auto flex flex-col"
         style={{
           transform: `translate3d(${pan.x}px, ${pan.y}px, 0px) scale(${scale})`,
-          transformOrigin: 'center center',
-          transition: isAnimating ? 'transform 0.24s cubic-bezier(0.2, 0, 0, 1)' : 'none',
+          transformOrigin: `${origin.x}px ${origin.y}px`,
+          transition: isAnimating ? 'transform 0.22s cubic-bezier(0.16, 1, 0.3, 1)' : 'none',
           willChange: 'transform'
         }}
       >
@@ -311,7 +389,7 @@ export const WebtoonMode: React.FC<WebtoonModeProps> = ({
               e.stopPropagation();
               resetZoom();
             }}
-            className="flex items-center gap-1.5 bg-black/75 hover:bg-black/90 text-indigo-300 px-3 py-1.5 rounded-full border border-indigo-500/40 text-xs font-mono font-medium shadow-lg backdrop-blur-md active:scale-95 transition"
+            className="flex items-center gap-1.5 bg-black/80 hover:bg-black/95 text-indigo-300 px-3.5 py-1.5 rounded-full border border-indigo-500/40 text-xs font-mono font-medium shadow-xl backdrop-blur-md active:scale-95 transition"
           >
             <ZoomIn className="w-3.5 h-3.5 text-indigo-400" />
             <span>{scale.toFixed(1)}x</span>

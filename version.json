@@ -1,7 +1,7 @@
 {
-  "version": "1.0.4",
-  "releaseNotes": "1. 全新支持漫画画面手势缩放：支持双指任意捏合放大/缩小（1.0x ~ 3.5x）\n2. 支持双击快速以点击点为中心放大至2.2x或还原1.0x，单击防抖防误触\n3. 放大状态支持单指自由平移拖动画布，探索微小文字与分镜细节\n4. 翻页模式与条漫长图模式全面适配画面缩放，右上角提供快捷复位浮标\n5. 彻底优化升级检测解析机制，支持去BOM与防系统网络缓存",
-  "downloadUrl": "https://github.com/123guaiguai/drive_comic/releases/download/v1.0.4/CloudComic.apk",
-  "mirrorUrl": "https://gh-proxy.com/https://github.com/123guaiguai/drive_comic/releases/download/v1.0.4/CloudComic.apk",
+  "version": "1.0.5",
+  "releaseNotes": "1. 彻底解决放大画面漂移与乱动问题：重构多指触控追踪算法，支持平滑焦点跟随\n2. 增加触控过渡重新锚定机制，消除单双指切换及抬手时的跳跃与漂移\n3. 翻页模式增加 touch-action: none 硬件锁，彻底杜绝系统默认手势干扰\n4. 条漫模式优化缩放锚点，精准基于当前视口中心/双击触点对称展开\n5. 全局采用高帧率同步 Ref 计算，杜绝 React 状态异步延迟抖动",
+  "downloadUrl": "https://github.com/123guaiguai/drive_comic/releases/download/v1.0.5/CloudComic.apk",
+  "mirrorUrl": "https://gh-proxy.com/https://github.com/123guaiguai/drive_comic/releases/download/v1.0.5/CloudComic.apk",
   "publishedAt": "2026-09-06"
 }
