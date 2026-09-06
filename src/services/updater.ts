@@ -28,9 +28,27 @@ export class UpdateService {
     // 1. Try CDN mirrors (High-speed & unblocked in mainland China)
     for (const endpoint of cdnEndpoints) {
       try {
-        const res = await NetworkClient.get(endpoint);
-        if (res.status === 200 && res.data && res.data.version) {
-          const vData = typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
+        const res = await NetworkClient.get(endpoint, {
+          headers: {
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache'
+          }
+        });
+        
+        let vData: any = null;
+        if (res.status === 200 && res.data) {
+          if (typeof res.data === 'string') {
+            try {
+              vData = JSON.parse(res.data.replace(/^\uFEFF/, '').trim());
+            } catch (e) {
+              vData = null;
+            }
+          } else if (typeof res.data === 'object') {
+            vData = res.data;
+          }
+        }
+
+        if (vData && vData.version) {
           const latestVersion = (vData.version || '').replace(/^v/, '').trim();
           const hasUpdate = this.compareVersions(latestVersion, CURRENT_VERSION) > 0;
           return {
@@ -51,16 +69,26 @@ export class UpdateService {
     // 2. Fallback to GitHub API
     try {
       const res = await NetworkClient.get(
-        `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`,
+        `https://api.github.com/repos/${GITHUB_REPO}/releases/latest?t=${timestamp}`,
         {
           headers: {
-            'Accept': 'application/vnd.github.v3+json'
+            'Accept': 'application/vnd.github.v3+json',
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache'
           }
         }
       );
 
-      if (res.status === 200 && res.data) {
-        const release = res.data;
+      let release: any = res.data;
+      if (typeof release === 'string') {
+        try {
+          release = JSON.parse(release.replace(/^\uFEFF/, '').trim());
+        } catch (e) {
+          release = null;
+        }
+      }
+
+      if (res.status === 200 && release && release.tag_name) {
         const tagName: string = release.tag_name || '';
         const latestVersion = tagName.replace(/^v/, '').trim();
         const releaseNotes = release.body || '性能优化与体验改进';
