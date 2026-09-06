@@ -1,0 +1,7 @@
+﻿{
+  "version": "1.0.2",
+  "releaseNotes": "1. 修复条漫阅读时快速滑动失控自动下滑的问题\n2. 优化滚动阻尼与触控中断响应\n3. 新增国内 CDN 镜像更新与高速下载线路\n4. 网盘设置中新增【检查更新】功能与状态提示",
+  "downloadUrl": "https://github.com/123guaiguai/drive_comic/releases/download/v1.0.2/CloudComic.apk",
+  "mirrorUrl": "https://gh-proxy.com/https://github.com/123guaiguai/drive_comic/releases/download/v1.0.2/CloudComic.apk",
+  "publishedAt": "2026-09-06"
+}

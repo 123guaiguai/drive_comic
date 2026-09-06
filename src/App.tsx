@@ -241,6 +241,10 @@ export const App: React.FC = () => {
         onSaveAccount={handleSaveAccount}
         onSelectAccount={handleSelectAccount}
         onDeleteAccount={handleDeleteAccount}
+        onOpenUpdateModal={(info) => {
+          setUpdateInfo(info);
+          setIsUpdateModalOpen(true);
+        }}
       />
 
       {/* Fullscreen Comic Reader Modal */}

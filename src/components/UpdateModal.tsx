@@ -1,5 +1,5 @@
 import React from 'react';
-import { Download, Sparkles, X, ExternalLink } from 'lucide-react';
+import { Download, Sparkles, X, Zap, ExternalLink } from 'lucide-react';
 import { UpdateInfo } from '../services/updater';
 
 interface UpdateModalProps {
@@ -15,9 +15,10 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
 }) => {
   if (!isOpen || !updateInfo || !updateInfo.hasUpdate) return null;
 
-  const handleDownload = () => {
-    if (updateInfo.downloadUrl) {
-      window.open(updateInfo.downloadUrl, '_system');
+  const handleDownload = (url?: string) => {
+    const target = url || updateInfo.mirrorUrl || updateInfo.downloadUrl;
+    if (target) {
+      window.open(target, '_system');
     }
     onClose();
   };
@@ -38,7 +39,7 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
           </div>
           <h3 className="text-lg font-bold">发现新版本 v{updateInfo.latestVersion}</h3>
           <p className="text-xs text-indigo-200 mt-1">
-            当前版本 v{updateInfo.currentVersion}，新版已发布！
+            当前版本 v{updateInfo.currentVersion}，新版已就绪！
           </p>
         </div>
 
@@ -55,20 +56,32 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
         </div>
 
         {/* Actions */}
-        <div className="p-4 bg-gray-900/50 border-t border-gray-800 flex gap-2.5">
-          <button
-            onClick={onClose}
-            className="flex-1 py-2.5 rounded-xl text-xs font-semibold text-gray-400 hover:text-gray-200 hover:bg-gray-800/80 transition"
-          >
-            暂不更新
-          </button>
-          <button
-            onClick={handleDownload}
-            className="flex-1 py-2.5 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-1.5 transition active:scale-95"
-          >
-            <Download className="w-4 h-4" />
-            <span>立即更新</span>
-          </button>
+        <div className="p-4 bg-gray-900/50 border-t border-gray-800 flex flex-col gap-2">
+          {updateInfo.mirrorUrl ? (
+            <button
+              onClick={() => handleDownload(updateInfo.mirrorUrl)}
+              className="w-full py-2.5 rounded-xl text-xs font-semibold bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-1.5 transition active:scale-95"
+            >
+              <Zap className="w-4 h-4 text-amber-300" />
+              <span>国内高速通道下载 (推荐)</span>
+            </button>
+          ) : null}
+
+          <div className="flex gap-2">
+            <button
+              onClick={onClose}
+              className="flex-1 py-2 rounded-xl text-xs font-semibold text-gray-400 hover:text-gray-200 hover:bg-gray-800/80 transition"
+            >
+              暂不更新
+            </button>
+            <button
+              onClick={() => handleDownload(updateInfo.downloadUrl)}
+              className="flex-1 py-2 rounded-xl text-xs font-semibold bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 flex items-center justify-center gap-1.5 transition active:scale-95"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>GitHub 官方下载</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>

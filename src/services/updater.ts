@@ -6,19 +6,50 @@ export interface UpdateInfo {
   currentVersion: string;
   releaseNotes: string;
   downloadUrl?: string;
+  mirrorUrl?: string;
   publishedAt?: string;
+  error?: string;
 }
 
-export const CURRENT_VERSION = '1.0.1';
+export const CURRENT_VERSION = '1.0.2';
 export const GITHUB_REPO = '123guaiguai/drive_comic';
 
 export class UpdateService {
   /**
-   * Check GitHub Releases for updates
+   * Check for updates via domestic CDN mirror first, then fallback to GitHub API
    */
   static async checkUpdate(): Promise<UpdateInfo> {
+    const timestamp = Date.now();
+    const cdnEndpoints = [
+      `https://fastly.jsdelivr.net/gh/${GITHUB_REPO}@main/version.json?t=${timestamp}`,
+      `https://cdn.jsdelivr.net/gh/${GITHUB_REPO}@main/version.json?t=${timestamp}`
+    ];
+
+    // 1. Try CDN mirrors (High-speed & unblocked in mainland China)
+    for (const endpoint of cdnEndpoints) {
+      try {
+        const res = await NetworkClient.get(endpoint);
+        if (res.status === 200 && res.data && res.data.version) {
+          const vData = typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
+          const latestVersion = (vData.version || '').replace(/^v/, '').trim();
+          const hasUpdate = this.compareVersions(latestVersion, CURRENT_VERSION) > 0;
+          return {
+            hasUpdate,
+            latestVersion,
+            currentVersion: CURRENT_VERSION,
+            releaseNotes: vData.releaseNotes || '性能优化与体验改进',
+            downloadUrl: vData.downloadUrl,
+            mirrorUrl: vData.mirrorUrl || (vData.downloadUrl ? `https://gh-proxy.com/${vData.downloadUrl}` : undefined),
+            publishedAt: vData.publishedAt
+          };
+        }
+      } catch (err) {
+        console.warn(`CDN check failed on ${endpoint}:`, err);
+      }
+    }
+
+    // 2. Fallback to GitHub API
     try {
-      // Fetch latest release from GitHub API
       const res = await NetworkClient.get(
         `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`,
         {
@@ -32,7 +63,7 @@ export class UpdateService {
         const release = res.data;
         const tagName: string = release.tag_name || '';
         const latestVersion = tagName.replace(/^v/, '').trim();
-        const releaseNotes = release.body || '无详细更新说明';
+        const releaseNotes = release.body || '性能优化与体验改进';
         const publishedAt = release.published_at;
 
         // Find APK asset
@@ -54,6 +85,7 @@ export class UpdateService {
           currentVersion: CURRENT_VERSION,
           releaseNotes,
           downloadUrl,
+          mirrorUrl: downloadUrl ? `https://gh-proxy.com/${downloadUrl}` : undefined,
           publishedAt
         };
       }
@@ -65,12 +97,13 @@ export class UpdateService {
         releaseNotes: ''
       };
     } catch (e: any) {
-      console.warn('Check update failed:', e);
+      console.warn('GitHub API check failed:', e);
       return {
         hasUpdate: false,
         latestVersion: CURRENT_VERSION,
         currentVersion: CURRENT_VERSION,
-        releaseNotes: '网络请求超时或暂无发布版本'
+        releaseNotes: '',
+        error: e.message || '网络连接超时，请检查网络或开启代理'
       };
     }
   }

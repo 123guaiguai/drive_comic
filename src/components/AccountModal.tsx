@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { X, CheckCircle2, AlertCircle, Plus, Trash2, HelpCircle, HardDrive, RefreshCw } from 'lucide-react';
+import { X, CheckCircle2, AlertCircle, Plus, Trash2, HelpCircle, HardDrive, RefreshCw, ArrowUpCircle, Info } from 'lucide-react';
 import { CloudAccount, CloudDriveType } from '../types/comic';
 import { BaiduService } from '../services/baiduService';
 import { QuarkService } from '../services/quarkService';
 import { WebDavService } from '../services/webdavService';
+import { UpdateService, CURRENT_VERSION, UpdateInfo } from '../services/updater';
 
 interface AccountModalProps {
   isOpen: boolean;
@@ -13,6 +14,7 @@ interface AccountModalProps {
   onSaveAccount: (account: CloudAccount) => void;
   onSelectAccount: (account: CloudAccount) => void;
   onDeleteAccount: (id: string) => void;
+  onOpenUpdateModal?: (info: UpdateInfo) => void;
 }
 
 export const AccountModal: React.FC<AccountModalProps> = ({
@@ -22,7 +24,8 @@ export const AccountModal: React.FC<AccountModalProps> = ({
   activeAccount,
   onSaveAccount,
   onSelectAccount,
-  onDeleteAccount
+  onDeleteAccount,
+  onOpenUpdateModal
 }) => {
   const [selectedType, setSelectedType] = useState<CloudDriveType>('quark');
   const [accountName, setAccountName] = useState('');
@@ -44,6 +47,45 @@ export const AccountModal: React.FC<AccountModalProps> = ({
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [showHelp, setShowHelp] = useState(false);
+
+  // Version update check state
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [updateStatus, setUpdateStatus] = useState<{
+    type: 'idle' | 'latest' | 'error';
+    message?: string;
+  }>({ type: 'idle' });
+
+  const handleManualCheckUpdate = async () => {
+    setCheckingUpdate(true);
+    setUpdateStatus({ type: 'idle' });
+    try {
+      const info = await UpdateService.checkUpdate();
+      if (info.hasUpdate) {
+        if (onOpenUpdateModal) {
+          onOpenUpdateModal(info);
+        }
+      } else {
+        if (info.error) {
+          setUpdateStatus({
+            type: 'error',
+            message: `检查失败: ${info.error}`
+          });
+        } else {
+          setUpdateStatus({
+            type: 'latest',
+            message: `当前已是最新版本 (v${CURRENT_VERSION})`
+          });
+        }
+      }
+    } catch (e: any) {
+      setUpdateStatus({
+        type: 'error',
+        message: e.message || '网络连接超时，请检查网络或开启代理'
+      });
+    } finally {
+      setCheckingUpdate(false);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -432,6 +474,49 @@ export const AccountModal: React.FC<AccountModalProps> = ({
                 保存并连接
               </button>
             </div>
+          </div>
+
+          {/* App Version & Update Card */}
+          <div className="bg-gray-900/40 border border-gray-800 rounded-xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Info className="w-4 h-4 text-indigo-400" />
+                <span className="text-xs font-semibold text-gray-300">软件版本</span>
+                <span className="text-xs bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-2 py-0.5 rounded-full font-mono">
+                  v{CURRENT_VERSION}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={handleManualCheckUpdate}
+                disabled={checkingUpdate}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 border border-indigo-500/40 text-xs font-medium transition disabled:opacity-50 active:scale-95"
+              >
+                {checkingUpdate ? (
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-indigo-400" />
+                ) : (
+                  <ArrowUpCircle className="w-3.5 h-3.5" />
+                )}
+                <span>{checkingUpdate ? '正在检查...' : '检查更新'}</span>
+              </button>
+            </div>
+
+            {updateStatus.type !== 'idle' && (
+              <div
+                className={`p-2.5 rounded-lg flex items-center gap-2 text-xs animate-fade-in ${
+                  updateStatus.type === 'latest'
+                    ? 'bg-emerald-950/40 text-emerald-300 border border-emerald-500/30'
+                    : 'bg-rose-950/40 text-rose-300 border border-rose-500/30'
+                }`}
+              >
+                {updateStatus.type === 'latest' ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+                )}
+                <span>{updateStatus.message}</span>
+              </div>
+            )}
           </div>
         </div>
       </div>
