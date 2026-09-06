@@ -1,6 +1,6 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { ComicPage } from '../../types/comic';
-import { AlertCircle, RefreshCw } from 'lucide-react';
+import { AlertCircle, RefreshCw, ZoomIn, RotateCcw } from 'lucide-react';
 
 interface PagerModeProps {
   pages: ComicPage[];
@@ -19,11 +19,53 @@ export const PagerMode: React.FC<PagerModeProps> = ({
   onToggleHUD,
   onRetryPage
 }) => {
+  // Zoom & Pan states
   const [scale, setScale] = useState(1);
-  const touchStartX = useRef(0);
-  const touchStartY = useRef(0);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [isAnimating, setIsAnimating] = useState(false);
+
+  // Gesture refs
+  const touchStateRef = useRef<{
+    mode: 'idle' | 'pan' | 'pinch' | 'swipe';
+    startX: number;
+    startY: number;
+    startDistance: number;
+    startScale: number;
+    startPos: { x: number; y: number };
+    hasMoved: boolean;
+  }>({
+    mode: 'idle',
+    startX: 0,
+    startY: 0,
+    startDistance: 0,
+    startScale: 1,
+    startPos: { x: 0, y: 0 },
+    hasMoved: false
+  });
+
+  const lastTapRef = useRef<{ time: number; x: number; y: number }>({ time: 0, x: 0, y: 0 });
+  const singleTapTimerRef = useRef<any>(null);
 
   const activePage = pages[currentPage - 1];
+
+  // Auto reset zoom when turning to another page
+  useEffect(() => {
+    setScale(1);
+    setPosition({ x: 0, y: 0 });
+    setIsAnimating(false);
+    if (singleTapTimerRef.current) {
+      clearTimeout(singleTapTimerRef.current);
+    }
+  }, [currentPage]);
+
+  // Clean up timer on unmount
+  useEffect(() => {
+    return () => {
+      if (singleTapTimerRef.current) {
+        clearTimeout(singleTapTimerRef.current);
+      }
+    };
+  }, []);
 
   const goNext = () => {
     if (currentPage < pages.length) {
@@ -37,81 +79,228 @@ export const PagerMode: React.FC<PagerModeProps> = ({
     }
   };
 
-  // Screen tap areas:
-  // Left 30%, Center 40%, Right 30%
-  const handleScreenClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    const width = window.innerWidth;
-    const x = e.clientX;
+  const resetZoom = () => {
+    setIsAnimating(true);
+    setScale(1);
+    setPosition({ x: 0, y: 0 });
+  };
 
-    if (scale > 1) {
-      // If zoomed in, tap resets zoom
-      setScale(1);
+  // Clamp translation so image cannot be dragged entirely off-screen
+  const clampPosition = (x: number, y: number, currentScale: number) => {
+    if (currentScale <= 1.02) {
+      return { x: 0, y: 0 };
+    }
+    const maxX = ((currentScale - 1) * window.innerWidth) / 2;
+    const maxY = ((currentScale - 1) * window.innerHeight) / 2;
+    return {
+      x: Math.max(-maxX, Math.min(maxX, x)),
+      y: Math.max(-maxY, Math.min(maxY, y))
+    };
+  };
+
+  // Single tap action (Left/Right to flip page, Center to toggle HUD)
+  const handleSingleTap = (clientX: number) => {
+    const width = window.innerWidth;
+    if (scale > 1.05) {
+      // In zoomed state, single tap toggles HUD
+      onToggleHUD();
       return;
     }
 
-    if (x < width * 0.3) {
-      // Tapped left
+    if (clientX < width * 0.3) {
+      // Left 30%
       if (direction === 'right-to-left') {
         goNext();
       } else {
         goPrev();
       }
-    } else if (x > width * 0.7) {
-      // Tapped right
+    } else if (clientX > width * 0.7) {
+      // Right 30%
       if (direction === 'right-to-left') {
         goPrev();
       } else {
         goNext();
       }
     } else {
-      // Tapped center
+      // Center 40%
       onToggleHUD();
     }
   };
 
-  // Touch gestures for swipe
+  // Touch handlers for Pinch, Pan, Double-Tap and Swipe
   const handleTouchStart = (e: React.TouchEvent) => {
-    if (e.touches.length === 1) {
-      touchStartX.current = e.touches[0].clientX;
-      touchStartY.current = e.touches[0].clientY;
+    setIsAnimating(false);
+
+    if (e.touches.length === 2) {
+      // 2 fingers -> Pinch to zoom
+      const touch1 = e.touches[0];
+      const touch2 = e.touches[1];
+      const distance = Math.hypot(touch2.clientX - touch1.clientX, touch2.clientY - touch1.clientY);
+
+      touchStateRef.current = {
+        mode: 'pinch',
+        startX: (touch1.clientX + touch2.clientX) / 2,
+        startY: (touch1.clientY + touch2.clientY) / 2,
+        startDistance: distance,
+        startScale: scale,
+        startPos: { ...position },
+        hasMoved: false
+      };
+
+      if (singleTapTimerRef.current) {
+        clearTimeout(singleTapTimerRef.current);
+        singleTapTimerRef.current = null;
+      }
+    } else if (e.touches.length === 1) {
+      // 1 finger
+      const touch = e.touches[0];
+      touchStateRef.current = {
+        mode: scale > 1.05 ? 'pan' : 'swipe',
+        startX: touch.clientX,
+        startY: touch.clientY,
+        startDistance: 0,
+        startScale: scale,
+        startPos: { ...position },
+        hasMoved: false
+      };
     }
   };
 
-  const handleTouchEnd = (e: React.TouchEvent) => {
-    if (scale > 1) return;
-    const endX = e.changedTouches[0].clientX;
-    const endY = e.changedTouches[0].clientY;
-    const diffX = endX - touchStartX.current;
-    const diffY = endY - touchStartY.current;
+  const handleTouchMove = (e: React.TouchEvent) => {
+    const state = touchStateRef.current;
 
-    // Horizontal swipe threshold
-    if (Math.abs(diffX) > 45 && Math.abs(diffX) > Math.abs(diffY)) {
-      if (diffX > 0) {
-        // Swiped right
-        if (direction === 'right-to-left') {
-          goPrev();
+    if (e.touches.length === 2 && state.mode === 'pinch') {
+      const touch1 = e.touches[0];
+      const touch2 = e.touches[1];
+      const distance = Math.hypot(touch2.clientX - touch1.clientX, touch2.clientY - touch1.clientY);
+
+      if (state.startDistance > 0) {
+        state.hasMoved = true;
+        const ratio = distance / state.startDistance;
+        const targetScale = Math.min(3.5, Math.max(1, state.startScale * ratio));
+        setScale(targetScale);
+
+        if (targetScale <= 1.02) {
+          setPosition({ x: 0, y: 0 });
         } else {
-          goNext();
+          setPosition((prev) => clampPosition(prev.x, prev.y, targetScale));
         }
-      } else {
-        // Swiped left
-        if (direction === 'right-to-left') {
-          goNext();
-        } else {
-          goPrev();
-        }
+      }
+    } else if (e.touches.length === 1) {
+      const touch = e.touches[0];
+      const diffX = touch.clientX - state.startX;
+      const diffY = touch.clientY - state.startY;
+
+      if (Math.hypot(diffX, diffY) > 8) {
+        state.hasMoved = true;
+      }
+
+      if (state.mode === 'pan' && scale > 1.05) {
+        const nextX = state.startPos.x + diffX;
+        const nextY = state.startPos.y + diffY;
+        setPosition(clampPosition(nextX, nextY, scale));
       }
     }
   };
 
-  // Double tap zoom
-  const lastTapRef = useRef<number>(0);
-  const handleDoubleTap = (e: React.MouseEvent) => {
-    const now = Date.now();
-    if (now - lastTapRef.current < 300) {
-      setScale((prev) => (prev > 1 ? 1 : 2));
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    const state = touchStateRef.current;
+
+    if (state.mode === 'pinch') {
+      if (e.touches.length === 0) {
+        setIsAnimating(true);
+        if (scale < 1.05) {
+          setScale(1);
+          setPosition({ x: 0, y: 0 });
+        } else {
+          setPosition((prev) => clampPosition(prev.x, prev.y, scale));
+        }
+        touchStateRef.current.mode = 'idle';
+      }
+      return;
     }
-    lastTapRef.current = now;
+
+    if (state.mode === 'swipe' && state.hasMoved && scale <= 1.05) {
+      const endTouch = e.changedTouches[0];
+      const diffX = endTouch.clientX - state.startX;
+      const diffY = endTouch.clientY - state.startY;
+
+      // Horizontal swipe threshold
+      if (Math.abs(diffX) > 45 && Math.abs(diffX) > Math.abs(diffY)) {
+        if (diffX > 0) {
+          // Swiped right
+          if (direction === 'right-to-left') {
+            goPrev();
+          } else {
+            goNext();
+          }
+        } else {
+          // Swiped left
+          if (direction === 'right-to-left') {
+            goNext();
+          } else {
+            goPrev();
+          }
+        }
+      }
+      touchStateRef.current.mode = 'idle';
+      return;
+    }
+
+    if (!state.hasMoved && e.changedTouches.length === 1) {
+      // User tapped screen (Tap or Double Tap)
+      const touch = e.changedTouches[0];
+      const now = Date.now();
+      const lastTap = lastTapRef.current;
+      const distFromLastTap = Math.hypot(touch.clientX - lastTap.x, touch.clientY - lastTap.y);
+
+      if (now - lastTap.time < 280 && distFromLastTap < 40) {
+        // Double tap confirmed! Cancel pending single-tap action
+        if (singleTapTimerRef.current) {
+          clearTimeout(singleTapTimerRef.current);
+          singleTapTimerRef.current = null;
+        }
+
+        setIsAnimating(true);
+        if (scale > 1.1) {
+          // Reset zoom
+          setScale(1);
+          setPosition({ x: 0, y: 0 });
+        } else {
+          // Zoom into double-tap location
+          const targetScale = 2.2;
+          const focalX = (window.innerWidth / 2 - touch.clientX) * (targetScale - 1);
+          const focalY = (window.innerHeight / 2 - touch.clientY) * (targetScale - 1);
+          setScale(targetScale);
+          setPosition(clampPosition(focalX, focalY, targetScale));
+        }
+        lastTapRef.current = { time: 0, x: 0, y: 0 };
+      } else {
+        // First tap -> start single tap timer
+        lastTapRef.current = { time: now, x: touch.clientX, y: touch.clientY };
+        const clientX = touch.clientX;
+        singleTapTimerRef.current = setTimeout(() => {
+          handleSingleTap(clientX);
+          singleTapTimerRef.current = null;
+        }, 260);
+      }
+    }
+
+    touchStateRef.current.mode = 'idle';
+  };
+
+  // Wheel zoom for desktop
+  const handleWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    const delta = -e.deltaY * 0.002;
+    const newScale = Math.min(3.5, Math.max(1, scale + delta));
+    setIsAnimating(false);
+    setScale(newScale);
+    if (newScale <= 1.02) {
+      setPosition({ x: 0, y: 0 });
+    } else {
+      setPosition((prev) => clampPosition(prev.x, prev.y, newScale));
+    }
   };
 
   if (!activePage) {
@@ -124,17 +313,20 @@ export const PagerMode: React.FC<PagerModeProps> = ({
 
   return (
     <div
-      onClick={(e) => {
-        handleDoubleTap(e);
-        handleScreenClick(e);
-      }}
       onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
-      className="w-full h-screen relative flex items-center justify-center overflow-hidden select-none"
+      onWheel={handleWheel}
+      className="w-full h-screen relative flex items-center justify-center overflow-hidden select-none bg-black"
     >
       <div
-        className="w-full h-full flex items-center justify-center transition-transform duration-150"
-        style={{ transform: `scale(${scale})` }}
+        className="w-full h-full flex items-center justify-center pointer-events-auto"
+        style={{
+          transform: `translate3d(${position.x}px, ${position.y}px, 0px) scale(${scale})`,
+          transformOrigin: 'center center',
+          transition: isAnimating ? 'transform 0.24s cubic-bezier(0.2, 0, 0, 1)' : 'none',
+          willChange: 'transform'
+        }}
       >
         {activePage.error ? (
           <div
@@ -154,11 +346,29 @@ export const PagerMode: React.FC<PagerModeProps> = ({
           <img
             src={activePage.url}
             alt={`Page ${activePage.index}`}
-            className="max-w-full max-h-full object-contain pointer-events-none"
+            draggable={false}
+            className="max-w-full max-h-full object-contain pointer-events-none user-select-none"
             onError={() => onRetryPage(activePage.id)}
           />
         )}
       </div>
+
+      {/* Floating Zoom Indicator & Quick Reset Button */}
+      {scale > 1.05 && (
+        <div className="absolute top-4 right-4 z-30 animate-fade-in pointer-events-auto">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              resetZoom();
+            }}
+            className="flex items-center gap-1.5 bg-black/75 hover:bg-black/90 text-indigo-300 px-3 py-1.5 rounded-full border border-indigo-500/40 text-xs font-mono font-medium shadow-lg backdrop-blur-md active:scale-95 transition"
+          >
+            <ZoomIn className="w-3.5 h-3.5 text-indigo-400" />
+            <span>{scale.toFixed(1)}x</span>
+            <RotateCcw className="w-3 h-3 text-gray-400 ml-1 hover:text-white" />
+          </button>
+        </div>
+      )}
 
       {/* Preload adjacent page in background */}
       {currentPage < pages.length && pages[currentPage]?.url && (

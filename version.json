@@ -1,7 +1,7 @@
 {
-  "version": "1.0.3",
-  "releaseNotes": "1. 支持多话子文件夹结构智能识别与展开为完整目录\n2. 增加完整章节选集目录抽屉（支持正倒序、快速搜索与进度标记）\n3. 修复手机端点击屏幕中央唤出/收起控制台（消除 touchend 与 click 双重触发）\n4. 支持全面屏边缘滑动退出（Android 原生返回手势与边缘侧滑）\n5. 书架支持直接打开选集与首话智能穿透开读",
-  "downloadUrl": "https://github.com/123guaiguai/drive_comic/releases/download/v1.0.3/CloudComic.apk",
-  "mirrorUrl": "https://gh-proxy.com/https://github.com/123guaiguai/drive_comic/releases/download/v1.0.3/CloudComic.apk",
+  "version": "1.0.4",
+  "releaseNotes": "1. 全新支持漫画画面手势缩放：支持双指任意捏合放大/缩小（1.0x ~ 3.5x）\n2. 支持双击快速以点击点为中心放大至2.2x或还原1.0x，单击防抖防误触\n3. 放大状态支持单指自由平移拖动画布，探索微小文字与分镜细节\n4. 翻页模式与条漫长图模式全面适配画面缩放，右上角提供快捷复位浮标\n5. 彻底优化升级检测解析机制，支持去BOM与防系统网络缓存",
+  "downloadUrl": "https://github.com/123guaiguai/drive_comic/releases/download/v1.0.4/CloudComic.apk",
+  "mirrorUrl": "https://gh-proxy.com/https://github.com/123guaiguai/drive_comic/releases/download/v1.0.4/CloudComic.apk",
   "publishedAt": "2026-09-06"
 }
