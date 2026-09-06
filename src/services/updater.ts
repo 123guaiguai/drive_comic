@@ -9,7 +9,7 @@ export interface UpdateInfo {
   publishedAt?: string;
 }
 
-export const CURRENT_VERSION = '1.0.0';
+export const CURRENT_VERSION = '1.0.1';
 export const GITHUB_REPO = '123guaiguai/drive_comic';
 
 export class UpdateService {

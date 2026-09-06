@@ -30,6 +30,7 @@ export const ComicReader: React.FC<ComicReaderProps> = ({
 }) => {
   const [pages, setPages] = useState<ComicPage[]>([]);
   const [currentPage, setCurrentPage] = useState(initialPage);
+  const [targetPage, setTargetPage] = useState<number | undefined>(initialPage);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showHUD, setShowHUD] = useState(false);
@@ -63,6 +64,7 @@ export const ComicReader: React.FC<ComicReaderProps> = ({
         setPages(pageList);
         const validPage = Math.min(Math.max(1, initialPage), pageList.length);
         setCurrentPage(validPage);
+        setTargetPage(validPage);
       }
     } catch (e: any) {
       setError(e.message || '加载漫画页面失败');
@@ -143,11 +145,11 @@ export const ComicReader: React.FC<ComicReaderProps> = ({
 
       {/* Reader View */}
       {!loading && !error && pages.length > 0 && (
-        <div className="flex-1 w-full h-full overflow-y-auto">
+        <div className="flex-1 w-full h-full overflow-hidden relative">
           {settings.mode === 'webtoon' ? (
             <WebtoonMode
               pages={pages}
-              currentPage={currentPage}
+              targetPage={targetPage}
               onPageVisible={handlePageVisible}
               onToggleHUD={() => setShowHUD((prev) => !prev)}
               onRetryPage={handleRetryPage}
@@ -157,7 +159,10 @@ export const ComicReader: React.FC<ComicReaderProps> = ({
               pages={pages}
               currentPage={currentPage}
               direction={settings.mode === 'right-to-left' ? 'right-to-left' : 'left-to-right'}
-              onPageChange={(p) => setCurrentPage(p)}
+              onPageChange={(p) => {
+                setCurrentPage(p);
+                setTargetPage(p);
+              }}
               onToggleHUD={() => setShowHUD((prev) => !prev)}
               onRetryPage={handleRetryPage}
             />
@@ -175,9 +180,18 @@ export const ComicReader: React.FC<ComicReaderProps> = ({
         settings={settings}
         hasPrevChapter={!!prevChapter}
         hasNextChapter={!!nextChapter}
-        onPrevChapter={() => prevChapter && onChapterChange(prevChapter)}
-        onNextChapter={() => nextChapter && onChapterChange(nextChapter)}
-        onPageChange={(p) => setCurrentPage(p)}
+        onPrevChapter={() => {
+          setTargetPage(1);
+          prevChapter && onChapterChange(prevChapter);
+        }}
+        onNextChapter={() => {
+          setTargetPage(1);
+          nextChapter && onChapterChange(nextChapter);
+        }}
+        onPageChange={(p) => {
+          setCurrentPage(p);
+          setTargetPage(p);
+        }}
         onSettingsChange={handleSettingsChange}
         onCloseReader={onClose}
       />
