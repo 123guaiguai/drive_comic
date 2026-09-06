@@ -1,4 +1,4 @@
-﻿{
+{
   "version": "1.0.3",
   "releaseNotes": "1. 支持多话子文件夹结构智能识别与展开为完整目录\n2. 增加完整章节选集目录抽屉（支持正倒序、快速搜索与进度标记）\n3. 修复手机端点击屏幕中央唤出/收起控制台（消除 touchend 与 click 双重触发）\n4. 支持全面屏边缘滑动退出（Android 原生返回手势与边缘侧滑）\n5. 书架支持直接打开选集与首话智能穿透开读",
   "downloadUrl": "https://github.com/123guaiguai/drive_comic/releases/download/v1.0.3/CloudComic.apk",
