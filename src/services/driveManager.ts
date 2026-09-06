@@ -3,6 +3,7 @@ import { BaiduService } from './baiduService';
 import { QuarkService } from './quarkService';
 import { StorageService } from './storage';
 import { WebDavService } from './webdavService';
+import { isImageFile, naturalCompare } from './naturalSort';
 
 export class DriveManager {
   private static currentAccount: CloudAccount | null = null;
@@ -73,26 +74,72 @@ export class DriveManager {
     throw new Error('不支持的网盘类型');
   }
 
+  /**
+   * Analyze folder structure: check if it contains chapter subfolders or direct images
+   */
+  static async getComicChapters(folderIdOrPath: string): Promise<{
+    hasSubChapters: boolean;
+    chapters: { id: string; name: string; path: string }[];
+    directImagesCount: number;
+    parentPath?: string;
+  }> {
+    const res = await this.listFolder(folderIdOrPath);
+    const subfolders = res.items.filter((it) => it.isDir);
+    const directImages = res.items.filter((it) => !it.isDir && isImageFile(it.name));
+
+    if (subfolders.length > 0) {
+      subfolders.sort((a, b) => naturalCompare(a.name, b.name));
+      return {
+        hasSubChapters: true,
+        chapters: subfolders.map((s) => ({
+          id: s.id,
+          name: s.name,
+          path: s.path || s.id
+        })),
+        directImagesCount: directImages.length,
+        parentPath: folderIdOrPath
+      };
+    }
+
+    return {
+      hasSubChapters: false,
+      chapters: [],
+      directImagesCount: directImages.length,
+      parentPath: folderIdOrPath
+    };
+  }
+
   static async getChapterPages(folderIdOrPath: string): Promise<ComicPage[]> {
     if (!this.currentAccount) {
       throw new Error('请先选择网盘账号');
     }
 
+    let pages: ComicPage[] = [];
+
     if (this.currentAccount.type === 'quark') {
       if (!this.quarkService) throw new Error('夸克网盘未就绪');
-      return await this.quarkService.getChapterPages(folderIdOrPath);
-    }
-
-    if (this.currentAccount.type === 'baidu') {
+      pages = await this.quarkService.getChapterPages(folderIdOrPath);
+    } else if (this.currentAccount.type === 'baidu') {
       if (!this.baiduService) throw new Error('百度网盘未就绪');
-      return await this.baiduService.getChapterPages(folderIdOrPath);
-    }
-
-    if (this.currentAccount.type === 'webdav') {
+      pages = await this.baiduService.getChapterPages(folderIdOrPath);
+    } else if (this.currentAccount.type === 'webdav') {
       if (!this.webdavService) throw new Error('WebDAV 服务未就绪');
-      return await this.webdavService.getChapterPages(folderIdOrPath);
+      pages = await this.webdavService.getChapterPages(folderIdOrPath);
     }
 
-    return [];
+    // If folder itself has no images, check if it's a comic parent folder with chapter subfolders
+    if (pages.length === 0) {
+      try {
+        const structure = await this.getComicChapters(folderIdOrPath);
+        if (structure.hasSubChapters && structure.chapters.length > 0) {
+          const firstChapter = structure.chapters[0];
+          return await this.getChapterPages(firstChapter.id);
+        }
+      } catch (e) {
+        console.warn('Auto subfolder resolution failed:', e);
+      }
+    }
+
+    return pages;
   }
 }

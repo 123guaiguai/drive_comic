@@ -67,6 +67,7 @@ export const WebtoonMode: React.FC<WebtoonModeProps> = ({
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
   const isDragging = useRef(false);
+  const lastTouchHandled = useRef(0);
 
   const handleTouchStart = (e: React.TouchEvent) => {
     // User touches screen -> immediately cancel any programmatic scroll
@@ -79,20 +80,24 @@ export const WebtoonMode: React.FC<WebtoonModeProps> = ({
   const handleTouchMove = (e: React.TouchEvent) => {
     const dx = Math.abs(e.touches[0].clientX - touchStartX.current);
     const dy = Math.abs(e.touches[0].clientY - touchStartY.current);
-    if (dx > 10 || dy > 10) {
+    if (dx > 12 || dy > 12) {
       isDragging.current = true;
     }
   };
 
   const handleTouchEnd = () => {
     if (!isDragging.current) {
-      // Tap without movement -> toggle HUD
+      // Tap without dragging -> toggle HUD
+      lastTouchHandled.current = Date.now();
       onToggleHUD();
     }
   };
 
   const handleClick = () => {
-    // Desktop mouse fallback
+    // Desktop mouse fallback: ignore synthetic click following touchend on mobile
+    if (Date.now() - lastTouchHandled.current < 600) {
+      return;
+    }
     if (!isDragging.current) {
       onToggleHUD();
     }

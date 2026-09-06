@@ -8,7 +8,8 @@ import {
   Moon,
   Sparkles,
   Columns,
-  Rows
+  Rows,
+  List
 } from 'lucide-react';
 import { ReadingMode, ReaderSettings } from '../../types/comic';
 
@@ -26,6 +27,10 @@ interface ReaderHUDProps {
   onPageChange: (page: number) => void;
   onSettingsChange: (newSettings: Partial<ReaderSettings>) => void;
   onCloseReader: () => void;
+  onToggleHUD: () => void;
+  onOpenChapterModal?: () => void;
+  allChaptersCount?: number;
+  currentChapterIndex?: number;
 }
 
 export const ReaderHUD: React.FC<ReaderHUDProps> = ({
@@ -41,7 +46,11 @@ export const ReaderHUD: React.FC<ReaderHUDProps> = ({
   onNextChapter,
   onPageChange,
   onSettingsChange,
-  onCloseReader
+  onCloseReader,
+  onToggleHUD,
+  onOpenChapterModal,
+  allChaptersCount,
+  currentChapterIndex
 }) => {
   const [showSettingsDrawer, setShowSettingsDrawer] = React.useState(false);
 
@@ -64,9 +73,15 @@ export const ReaderHUD: React.FC<ReaderHUDProps> = ({
   ];
 
   return (
-    <div className="fixed inset-0 z-40 pointer-events-none select-none">
+    <div
+      onClick={onToggleHUD}
+      className="fixed inset-0 z-40 select-none pointer-events-auto bg-black/15 transition-opacity"
+    >
       {/* Top Bar */}
-      <div className="absolute top-0 inset-x-0 bg-gradient-to-b from-black/90 via-black/70 to-transparent pt-3 pb-8 px-4 pointer-events-auto transition-transform duration-200">
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="absolute top-0 inset-x-0 bg-gradient-to-b from-black/90 via-black/70 to-transparent pt-3 pb-8 px-4 pointer-events-auto transition-transform duration-200"
+      >
         <div className="max-w-4xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3 min-w-0">
             <button
@@ -82,7 +97,18 @@ export const ReaderHUD: React.FC<ReaderHUDProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
+            {onOpenChapterModal && (
+              <button
+                onClick={onOpenChapterModal}
+                className="p-2 rounded-xl text-gray-300 hover:text-white hover:bg-white/10 transition flex items-center gap-1.5 text-xs font-medium"
+                title="章节目录"
+              >
+                <List className="w-5 h-5 text-indigo-400" />
+                <span className="hidden sm:inline">选集</span>
+              </button>
+            )}
+
             <button
               onClick={() => setShowSettingsDrawer(!showSettingsDrawer)}
               className="p-2 rounded-xl text-gray-300 hover:text-white hover:bg-white/10 transition"
@@ -201,7 +227,10 @@ export const ReaderHUD: React.FC<ReaderHUDProps> = ({
       )}
 
       {/* Bottom Bar */}
-      <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/95 via-black/85 to-transparent pb-6 pt-6 px-4 pointer-events-auto">
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/95 via-black/85 to-transparent pb-6 pt-6 px-4 pointer-events-auto"
+      >
         <div className="max-w-xl mx-auto space-y-3">
           {/* Page slider */}
           <div className="flex items-center gap-3">
@@ -221,7 +250,7 @@ export const ReaderHUD: React.FC<ReaderHUDProps> = ({
             </span>
           </div>
 
-          {/* Controls: Prev Chapter, Mode switch, Next Chapter */}
+          {/* Controls: Prev Chapter, Chapter Drawer, Mode switch, Next Chapter */}
           <div className="flex items-center justify-between gap-2 pt-1">
             <button
               onClick={onPrevChapter}
@@ -232,6 +261,19 @@ export const ReaderHUD: React.FC<ReaderHUDProps> = ({
               <span>上一话</span>
             </button>
 
+            {onOpenChapterModal && (
+              <button
+                onClick={onOpenChapterModal}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-medium bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 border border-indigo-500/40 transition active:scale-95"
+                title="完整章节目录"
+              >
+                <List className="w-3.5 h-3.5" />
+                <span>
+                  选集 {allChaptersCount && allChaptersCount > 1 ? `(${currentChapterIndex !== undefined ? currentChapterIndex + 1 : 1}/${allChaptersCount})` : ''}
+                </span>
+              </button>
+            )}
+
             {/* Quick reading mode toggle */}
             <button
               onClick={() => {
@@ -239,11 +281,11 @@ export const ReaderHUD: React.FC<ReaderHUDProps> = ({
                 const nextMode = modes[(modes.indexOf(settings.mode) + 1) % modes.length];
                 onSettingsChange({ mode: nextMode });
               }}
-              className="px-3 py-1.5 rounded-xl text-xs font-medium bg-white/10 hover:bg-white/20 text-indigo-300 transition"
+              className="px-2.5 py-1.5 rounded-xl text-xs font-medium bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white transition"
             >
-              {settings.mode === 'webtoon' && '条漫卷轴'}
-              {settings.mode === 'right-to-left' && '日漫(右翻)'}
-              {settings.mode === 'left-to-right' && '普通(左翻)'}
+              {settings.mode === 'webtoon' && '条漫'}
+              {settings.mode === 'right-to-left' && '日漫'}
+              {settings.mode === 'left-to-right' && '普通'}
             </button>
 
             <button

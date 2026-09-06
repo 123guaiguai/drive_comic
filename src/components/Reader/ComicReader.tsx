@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ComicPage, ReaderSettings } from '../../types/comic';
 import { DriveManager } from '../../services/driveManager';
 import { StorageService } from '../../services/storage';
 import { ReaderHUD } from './ReaderHUD';
 import { WebtoonMode } from './WebtoonMode';
 import { PagerMode } from './PagerMode';
+import { ChapterModal, ChapterItemData } from '../ChapterModal';
 import { RefreshCw, AlertCircle, ArrowLeft } from 'lucide-react';
 
 interface ComicReaderProps {
@@ -14,6 +15,7 @@ interface ComicReaderProps {
   initialPage?: number;
   prevChapter?: { id: string; name: string; path: string };
   nextChapter?: { id: string; name: string; path: string };
+  allChapters?: { id: string; name: string; path: string }[];
   onChapterChange: (chapter: { id: string; name: string; path: string }) => void;
   onClose: () => void;
 }
@@ -25,6 +27,7 @@ export const ComicReader: React.FC<ComicReaderProps> = ({
   initialPage = 1,
   prevChapter,
   nextChapter,
+  allChapters,
   onChapterChange,
   onClose
 }) => {
@@ -34,6 +37,65 @@ export const ComicReader: React.FC<ComicReaderProps> = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showHUD, setShowHUD] = useState(false);
+  const [isChapterModalOpen, setIsChapterModalOpen] = useState(false);
+  const [localChapters, setLocalChapters] = useState<{ id: string; name: string; path: string }[]>(
+    allChapters || []
+  );
+
+  // Sync or discover sibling chapters
+  useEffect(() => {
+    if (allChapters && allChapters.length > 0) {
+      setLocalChapters(allChapters);
+    } else {
+      const curPath = currentChapter.path;
+      const parts = curPath.replace(/\/+$/, '').split('/');
+      if (parts.length > 1) {
+        parts.pop();
+        const parentPath = parts.join('/') || '/';
+        DriveManager.getComicChapters(parentPath)
+          .then((res) => {
+            if (res.hasSubChapters && res.chapters.length > 0) {
+              setLocalChapters(res.chapters);
+            }
+          })
+          .catch(() => {});
+      }
+    }
+  }, [currentChapter.path, allChapters]);
+
+  // Touch gesture for left-edge swipe to exit (Android full-screen back gesture)
+  const edgeStartX = useRef(0);
+  const edgeStartY = useRef(0);
+  const isEdgeSwipe = useRef(false);
+
+  const handleTouchStartGlobal = (e: React.TouchEvent) => {
+    if (e.touches.length === 1) {
+      const touch = e.touches[0];
+      if (touch.clientX < 35) {
+        edgeStartX.current = touch.clientX;
+        edgeStartY.current = touch.clientY;
+        isEdgeSwipe.current = true;
+      } else {
+        isEdgeSwipe.current = false;
+      }
+    }
+  };
+
+  const handleTouchMoveGlobal = (e: React.TouchEvent) => {
+    if (!isEdgeSwipe.current || e.touches.length !== 1) return;
+    const touch = e.touches[0];
+    const dx = touch.clientX - edgeStartX.current;
+    const dy = Math.abs(touch.clientY - edgeStartY.current);
+
+    if (dx > 65 && dy < 45) {
+      isEdgeSwipe.current = false;
+      onClose();
+    }
+  };
+
+  const handleTouchEndGlobal = () => {
+    isEdgeSwipe.current = false;
+  };
 
   const [settings, setSettings] = useState<ReaderSettings>({
     mode: 'webtoon',
@@ -106,9 +168,14 @@ export const ComicReader: React.FC<ComicReaderProps> = ({
     );
   };
 
+  const currentChapterIndex = localChapters.findIndex((c) => c.id === currentChapter.id);
+
   return (
     <div
-      className="fixed inset-0 z-50 overflow-hidden flex flex-col transition-colors duration-200"
+      onTouchStart={handleTouchStartGlobal}
+      onTouchMove={handleTouchMoveGlobal}
+      onTouchEnd={handleTouchEndGlobal}
+      className="fixed inset-0 z-50 overflow-hidden flex flex-col transition-colors duration-200 select-none"
       style={{ backgroundColor: settings.backgroundColor }}
     >
       {/* Loading state */}
@@ -194,6 +261,23 @@ export const ComicReader: React.FC<ComicReaderProps> = ({
         }}
         onSettingsChange={handleSettingsChange}
         onCloseReader={onClose}
+        onToggleHUD={() => setShowHUD((prev) => !prev)}
+        onOpenChapterModal={() => setIsChapterModalOpen(true)}
+        allChaptersCount={localChapters.length}
+        currentChapterIndex={currentChapterIndex >= 0 ? currentChapterIndex : undefined}
+      />
+
+      {/* Chapter Selection Drawer / Modal */}
+      <ChapterModal
+        isOpen={isChapterModalOpen}
+        onClose={() => setIsChapterModalOpen(false)}
+        title={comicTitle}
+        chapters={localChapters}
+        currentChapterId={currentChapter.id}
+        onSelectChapter={(chap) => {
+          setTargetPage(1);
+          onChapterChange(chap);
+        }}
       />
     </div>
   );

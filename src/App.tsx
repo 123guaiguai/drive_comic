@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { App as CapApp } from '@capacitor/app';
 import { CloudAccount, ComicBook, DriveItem, ReadHistoryItem } from './types/comic';
 import { StorageService } from './services/storage';
 import { DriveManager } from './services/driveManager';
@@ -10,6 +11,7 @@ import { AccountModal } from './components/AccountModal';
 import { ComicReader } from './components/Reader/ComicReader';
 import { UpdateModal } from './components/UpdateModal';
 import { UpdateService, UpdateInfo } from './services/updater';
+import { ChapterModal, ChapterItemData } from './components/ChapterModal';
 
 export const App: React.FC = () => {
   const [currentTab, setCurrentTab] = useState<'bookshelf' | 'explorer' | 'history'>('bookshelf');
@@ -20,6 +22,12 @@ export const App: React.FC = () => {
   // Update check
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
+
+  // Bookshelf chapter selector modal
+  const [bookshelfModalState, setBookshelfModalState] = useState<{
+    title: string;
+    chapters: ChapterItemData[];
+  } | null>(null);
 
   const [bookshelf, setBookshelf] = useState<ComicBook[]>([]);
   const [history, setHistory] = useState<ReadHistoryItem[]>([]);
@@ -32,6 +40,19 @@ export const App: React.FC = () => {
     initialPage?: number;
     allChapters?: { id: string; name: string; path: string }[];
   } | null>(null);
+
+  // State refs for native backButton listener
+  const readingSessionRef = useRef(readingSession);
+  readingSessionRef.current = readingSession;
+
+  const bookshelfModalRef = useRef(bookshelfModalState);
+  bookshelfModalRef.current = bookshelfModalState;
+
+  const isAccountModalOpenRef = useRef(isAccountModalOpen);
+  isAccountModalOpenRef.current = isAccountModalOpen;
+
+  const isUpdateModalOpenRef = useRef(isUpdateModalOpen);
+  isUpdateModalOpenRef.current = isUpdateModalOpen;
 
   // Initialize data
   const loadData = async () => {
@@ -59,6 +80,31 @@ export const App: React.FC = () => {
         }
       });
     }, 2000);
+
+    // Hardware back button and full-screen edge swipe back listener
+    const backListener = CapApp.addListener('backButton', () => {
+      if (bookshelfModalRef.current) {
+        setBookshelfModalState(null);
+        return;
+      }
+      if (readingSessionRef.current) {
+        setReadingSession(null);
+        return;
+      }
+      if (isAccountModalOpenRef.current) {
+        setIsAccountModalOpen(false);
+        return;
+      }
+      if (isUpdateModalOpenRef.current) {
+        setIsUpdateModalOpen(false);
+        return;
+      }
+      CapApp.exitApp();
+    });
+
+    return () => {
+      backListener.then((sub) => sub.remove());
+    };
   }, []);
 
   // Account operations
@@ -113,32 +159,61 @@ export const App: React.FC = () => {
   };
 
   // Reader Launchers
-  const handleOpenBook = (book: ComicBook) => {
-    // If book already has last read chapter
-    if (book.lastReadChapterId && book.lastReadChapterTitle) {
-      setReadingSession({
-        comicId: book.id,
-        comicTitle: book.title,
-        currentChapter: {
-          id: book.lastReadChapterId,
-          name: book.lastReadChapterTitle,
-          path: book.lastReadChapterId
-        },
-        initialPage: book.lastReadPageIndex || 1
-      });
-    } else {
-      // Read the book's root folder directly
-      setReadingSession({
-        comicId: book.id,
-        comicTitle: book.title,
-        currentChapter: {
-          id: book.path,
-          name: book.title,
-          path: book.path
-        },
-        initialPage: 1
-      });
+  const handleOpenBook = async (book: ComicBook) => {
+    try {
+      const struct = await DriveManager.getComicChapters(book.path);
+      if (struct.hasSubChapters && struct.chapters.length > 0) {
+        let targetChapter = struct.chapters[0];
+        let initialPage = 1;
+
+        if (book.lastReadChapterId) {
+          const found = struct.chapters.find((c) => c.id === book.lastReadChapterId);
+          if (found) {
+            targetChapter = found;
+            initialPage = book.lastReadPageIndex || 1;
+          }
+        }
+
+        setReadingSession({
+          comicId: book.id,
+          comicTitle: book.title,
+          currentChapter: targetChapter,
+          initialPage,
+          allChapters: struct.chapters
+        });
+        return;
+      }
+    } catch (e) {
+      console.warn('Checking comic structure failed, falling back to direct open', e);
     }
+
+    // Direct single chapter open fallback
+    setReadingSession({
+      comicId: book.id,
+      comicTitle: book.title,
+      currentChapter: {
+        id: book.lastReadChapterId || book.path,
+        name: book.lastReadChapterTitle || book.title,
+        path: book.lastReadChapterId || book.path
+      },
+      initialPage: book.lastReadPageIndex || 1
+    });
+  };
+
+  const handleExploreBookFolder = async (book: ComicBook) => {
+    try {
+      const struct = await DriveManager.getComicChapters(book.path);
+      if (struct.hasSubChapters && struct.chapters.length > 0) {
+        setBookshelfModalState({
+          title: book.title,
+          chapters: struct.chapters
+        });
+        return;
+      }
+    } catch (e) {
+      console.warn('Failed to get chapters for bookshelf item', e);
+    }
+    setCurrentTab('explorer');
   };
 
   const handleReadFolder = (
@@ -204,9 +279,7 @@ export const App: React.FC = () => {
           <Bookshelf
             books={bookshelf}
             onOpenBook={handleOpenBook}
-            onExploreBookFolder={(book) => {
-              setCurrentTab('explorer');
-            }}
+            onExploreBookFolder={handleExploreBookFolder}
             onRemoveBook={handleRemoveFromBookshelf}
             onNavigateToExplorer={() => setCurrentTab('explorer')}
           />
@@ -256,6 +329,7 @@ export const App: React.FC = () => {
           initialPage={readingSession.initialPage}
           prevChapter={prevChapter}
           nextChapter={nextChapter}
+          allChapters={readingSession.allChapters}
           onChapterChange={(chap) => {
             setReadingSession((prev) => (prev ? { ...prev, currentChapter: chap, initialPage: 1 } : null));
           }}
@@ -274,6 +348,26 @@ export const App: React.FC = () => {
         updateInfo={updateInfo}
         onClose={() => setIsUpdateModalOpen(false)}
       />
+
+      {/* Bookshelf Chapter Selection Modal */}
+      {bookshelfModalState && (
+        <ChapterModal
+          isOpen={true}
+          onClose={() => setBookshelfModalState(null)}
+          title={bookshelfModalState.title}
+          chapters={bookshelfModalState.chapters}
+          onSelectChapter={(chap) => {
+            setReadingSession({
+              comicId: chap.id,
+              comicTitle: bookshelfModalState.title,
+              currentChapter: chap,
+              initialPage: 1,
+              allChapters: bookshelfModalState.chapters
+            });
+            setBookshelfModalState(null);
+          }}
+        />
+      )}
     </div>
   );
 };

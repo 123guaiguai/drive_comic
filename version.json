@@ -1,7 +1,7 @@
 ﻿{
-  "version": "1.0.2",
-  "releaseNotes": "1. 修复条漫阅读时快速滑动失控自动下滑的问题\n2. 优化滚动阻尼与触控中断响应\n3. 新增国内 CDN 镜像更新与高速下载线路\n4. 网盘设置中新增【检查更新】功能与状态提示",
-  "downloadUrl": "https://github.com/123guaiguai/drive_comic/releases/download/v1.0.2/CloudComic.apk",
-  "mirrorUrl": "https://gh-proxy.com/https://github.com/123guaiguai/drive_comic/releases/download/v1.0.2/CloudComic.apk",
+  "version": "1.0.3",
+  "releaseNotes": "1. 支持多话子文件夹结构智能识别与展开为完整目录\n2. 增加完整章节选集目录抽屉（支持正倒序、快速搜索与进度标记）\n3. 修复手机端点击屏幕中央唤出/收起控制台（消除 touchend 与 click 双重触发）\n4. 支持全面屏边缘滑动退出（Android 原生返回手势与边缘侧滑）\n5. 书架支持直接打开选集与首话智能穿透开读",
+  "downloadUrl": "https://github.com/123guaiguai/drive_comic/releases/download/v1.0.3/CloudComic.apk",
+  "mirrorUrl": "https://gh-proxy.com/https://github.com/123guaiguai/drive_comic/releases/download/v1.0.3/CloudComic.apk",
   "publishedAt": "2026-09-06"
 }

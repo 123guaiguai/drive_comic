@@ -10,11 +10,14 @@ import {
   ArrowLeft,
   AlertCircle,
   HardDrive,
-  BookMarked
+  BookMarked,
+  Library,
+  List
 } from 'lucide-react';
 import { CloudAccount, DriveItem, ComicBook } from '../types/comic';
 import { DriveManager } from '../services/driveManager';
 import { isImageFile } from '../services/naturalSort';
+import { ChapterModal, ChapterItemData } from './ChapterModal';
 
 interface BreadcrumbItem {
   id: string;
@@ -43,6 +46,8 @@ export const Explorer: React.FC<ExplorerProps> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+
+  const [isChapterModalOpen, setIsChapterModalOpen] = useState(false);
 
   const currentFolder = breadcrumbs[breadcrumbs.length - 1];
 
@@ -97,6 +102,26 @@ export const Explorer: React.FC<ExplorerProps> = ({
   // Check how many images exist in current folder
   const currentImages = items.filter((it) => !it.isDir && isImageFile(it.name));
   const currentFolders = items.filter((it) => it.isDir);
+
+  // If inside a folder and it contains subfolders (chapters)
+  const isComicSeries = breadcrumbs.length > 1 && currentFolders.length > 0 && currentImages.length === 0;
+
+  const chapterList: ChapterItemData[] = currentFolders.map((f) => ({
+    id: f.id,
+    name: f.name,
+    path: f.path || f.id
+  }));
+
+  const handleStartFromFirstChapter = () => {
+    if (currentFolders.length > 0) {
+      const first = currentFolders[0];
+      onReadFolder({ id: first.id, name: first.name, path: first.path || first.id }, currentFolders);
+    }
+  };
+
+  const handleReadChapterDirectly = (folder: DriveItem) => {
+    onReadFolder({ id: folder.id, name: folder.name, path: folder.path || folder.id }, currentFolders);
+  };
 
   const filteredItems = items.filter((item) =>
     item.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -253,6 +278,44 @@ export const Explorer: React.FC<ExplorerProps> = ({
         </div>
       )}
 
+      {/* Comic Series Recognition Banner */}
+      {isComicSeries && (
+        <div className="bg-gradient-to-r from-indigo-950/70 via-purple-950/50 to-indigo-950/70 border border-indigo-500/40 rounded-xl p-3.5 mb-3 shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-fade-in">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-indigo-600/30 border border-indigo-500/50 flex items-center justify-center text-indigo-300 flex-shrink-0 shadow-inner">
+              <Library className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-gray-100">{currentFolder.name}</h3>
+                <span className="text-[10px] bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-2 py-0.5 rounded-full font-mono">
+                  漫画系列 · 共 {currentFolders.length} 话
+                </span>
+              </div>
+              <p className="text-xs text-gray-400 mt-0.5">识别到多话子文件夹结构，支持连续阅读与选集</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleStartFromFirstChapter}
+              className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-2 rounded-xl text-xs font-semibold shadow-md shadow-indigo-600/30 transition active:scale-95"
+            >
+              <Play className="w-3.5 h-3.5 fill-white" />
+              <span>从第1话连续阅读</span>
+            </button>
+
+            <button
+              onClick={() => setIsChapterModalOpen(true)}
+              className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 bg-gray-800 hover:bg-gray-700 text-gray-200 px-3 py-2 rounded-xl text-xs font-medium border border-gray-700 transition active:scale-95"
+            >
+              <List className="w-3.5 h-3.5 text-indigo-400" />
+              <span>展开完整目录</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Items List */}
       <div className="flex-1 bg-[#18181d] border border-gray-800 rounded-xl overflow-hidden shadow-sm">
         {loading ? (
@@ -290,7 +353,20 @@ export const Explorer: React.FC<ExplorerProps> = ({
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 pl-2">
+                    <div className="flex items-center gap-1.5 pl-2">
+                      {/* Direct Read Chapter button */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleReadChapterDirectly(item);
+                        }}
+                        className="p-1.5 rounded-lg text-xs text-indigo-400 hover:text-white hover:bg-indigo-600/30 transition flex items-center gap-1"
+                        title="阅读此话"
+                      >
+                        <Play className="w-3.5 h-3.5 fill-indigo-400" />
+                        <span className="text-[11px] hidden sm:inline">阅读此话</span>
+                      </button>
+
                       {/* Quick Add Folder to Bookshelf */}
                       <button
                         onClick={(e) => {
@@ -363,6 +439,17 @@ export const Explorer: React.FC<ExplorerProps> = ({
           </div>
         )}
       </div>
+
+      {/* Chapter Directory Modal */}
+      <ChapterModal
+        isOpen={isChapterModalOpen}
+        onClose={() => setIsChapterModalOpen(false)}
+        title={currentFolder.name}
+        chapters={chapterList}
+        onSelectChapter={(chap) => {
+          onReadFolder(chap, currentFolders);
+        }}
+      />
     </div>
   );
 };
