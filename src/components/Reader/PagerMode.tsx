@@ -368,11 +368,6 @@ export const PagerMode: React.FC<PagerModeProps> = ({
               <RefreshCw className="w-3.5 h-3.5" /> 点击重试
             </button>
           </div>
-        ) : !activePage.url ? (
-          <div className="p-8 bg-gray-900/80 border border-gray-800/80 rounded-2xl flex flex-col items-center justify-center text-center animate-pulse">
-            <RefreshCw className="w-8 h-8 animate-spin text-indigo-400 mb-3" />
-            <p className="text-sm font-medium text-gray-300">正在渲染第 {activePage.index} 页...</p>
-          </div>
         ) : (
           <img
             src={activePage.url}
@@ -382,7 +377,6 @@ export const PagerMode: React.FC<PagerModeProps> = ({
             onError={() => onRetryPage(activePage.id)}
           />
         )}
-
       </div>
 
       {/* Floating Zoom Indicator & Quick Reset Button */}

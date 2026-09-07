@@ -1,7 +1,7 @@
 {
-  "version": "1.0.6",
-  "releaseNotes": "1. 新增网盘 PDF 文件直接转漫画阅读支持（支持夸克、百度网盘、WebDAV）\n2. 内置 PDF.js 高清离屏渲染引擎，2.0x 视网膜清晰度，完美保留画质与文字排版\n3. 支持将 PDF 漫画单行本一键加入书架并精准保存/恢复阅读进度\n4. PDF 漫画无缝支持条漫长图滚动、单页翻页、双击放大与双指缩放\n5. 预加载缓冲机制，翻页流畅丝滑",
-  "downloadUrl": "https://github.com/123guaiguai/drive_comic/releases/download/v1.0.6/CloudComic.apk",
-  "mirrorUrl": "https://gh-proxy.com/https://github.com/123guaiguai/drive_comic/releases/download/v1.0.6/CloudComic.apk",
-  "publishedAt": "2026-09-07"
+  "version": "1.0.5",
+  "releaseNotes": "1. 彻底解决放大画面漂移与乱动问题：重构多指触控追踪算法，支持平滑焦点跟随\n2. 增加触控过渡重新锚定机制，消除单双指切换及抬手时的跳跃与漂移\n3. 翻页模式增加 touch-action: none 硬件锁，彻底杜绝系统默认手势干扰\n4. 条漫模式优化缩放锚点，精准基于当前视口中心/双击触点对称展开\n5. 全局采用高帧率同步 Ref 计算，杜绝 React 状态异步延迟抖动",
+  "downloadUrl": "https://github.com/123guaiguai/drive_comic/releases/download/v1.0.5/CloudComic.apk",
+  "mirrorUrl": "https://gh-proxy.com/https://github.com/123guaiguai/drive_comic/releases/download/v1.0.5/CloudComic.apk",
+  "publishedAt": "2026-09-06"
 }

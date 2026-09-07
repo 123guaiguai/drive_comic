@@ -1,5 +1,5 @@
 import { DriveItem, ComicPage } from '../types/comic';
-import { isImageFile, isPdfFile, naturalCompare } from './naturalSort';
+import { isImageFile, naturalCompare } from './naturalSort';
 import { NetworkClient } from './network';
 
 export class BaiduService {
@@ -108,10 +108,9 @@ export class BaiduService {
         const isDir = item.isdir === 1;
         const rawThumb = item.thumbs?.url3 || item.thumbs?.url2 || item.thumbs?.url1;
         const hdThumb = rawThumb ? rawThumb.replace(/size=c\d+_u\d+/, 'size=c1600_u1600') : undefined;
-        const isPdf = !isDir && isPdfFile(item.server_filename);
 
         return {
-          id: item.fs_id ? item.fs_id.toString() : item.path,
+          id: item.path,
           name: item.server_filename,
           path: item.path,
           isDir,
@@ -119,8 +118,7 @@ export class BaiduService {
           updatedAt: item.server_mtime ? item.server_mtime * 1000 : undefined,
           driveType: 'baidu',
           thumbnail: hdThumb,
-          hasImages: isDir ? undefined : isImageFile(item.server_filename),
-          isPdf
+          hasImages: isDir ? undefined : isImageFile(item.server_filename)
         };
       });
 
@@ -157,10 +155,9 @@ export class BaiduService {
       const isDir = item.isdir === 1;
       const rawThumb = item.thumbs?.url3 || item.thumbs?.url2 || item.thumbs?.url1;
       const hdThumb = rawThumb ? rawThumb.replace(/size=c\d+_u\d+/, 'size=c1600_u1600') : undefined;
-      const isPdf = !isDir && isPdfFile(item.server_filename);
 
       return {
-        id: item.fs_id ? item.fs_id.toString() : item.path,
+        id: item.path,
         name: item.server_filename,
         path: item.path,
         isDir,
@@ -168,8 +165,7 @@ export class BaiduService {
         updatedAt: item.server_mtime ? item.server_mtime * 1000 : undefined,
         driveType: 'baidu',
         thumbnail: hdThumb,
-        hasImages: isDir ? undefined : isImageFile(item.server_filename),
-        isPdf
+        hasImages: isDir ? undefined : isImageFile(item.server_filename)
       };
     });
 
@@ -181,7 +177,6 @@ export class BaiduService {
 
     return { items };
   }
-
 
   /**
    * Get comic pages in a folder
@@ -207,92 +202,6 @@ export class BaiduService {
         thumbnailUrl: f.thumbnail
       };
     });
-  }
-
-  /**
-   * Download file binary data as ArrayBuffer
-   */
-  async getFileArrayBuffer(filePathOrFsid: string): Promise<ArrayBuffer> {
-    let fsid: string | null = null;
-    let path: string | null = null;
-
-    if (/^\d+$/.test(filePathOrFsid)) {
-      fsid = filePathOrFsid;
-    } else {
-      path = filePathOrFsid;
-    }
-
-    // If we only have path, attempt to look up its fs_id from the parent directory
-    if (!fsid && path) {
-      try {
-        const lastSlash = path.lastIndexOf('/');
-        const parentDir = lastSlash <= 0 ? '/' : path.slice(0, lastSlash);
-        const fileName = path.slice(lastSlash + 1);
-        const res = await this.listFolder(parentDir);
-        const matched = res.items.find((it) => it.name === fileName || it.path === path);
-        if (matched && matched.id && /^\d+$/.test(matched.id)) {
-          fsid = matched.id;
-        }
-      } catch (e) {
-        console.warn('Failed to resolve fs_id from parent folder:', e);
-      }
-    }
-
-    // Strategy 1: If we have fs_id, fetch dlink via filemetas (Works with both Token and Cookie)
-    if (fsid) {
-      try {
-        const metaMap = await this.batchGetFileMetas([fsid]);
-        const meta = metaMap[fsid];
-        if (meta?.dlink) {
-          let dlink = meta.dlink;
-          if (this.accessToken) {
-            dlink = dlink.includes('?')
-              ? `${dlink}&access_token=${this.accessToken}`
-              : `${dlink}?access_token=${this.accessToken}`;
-          }
-          const downloadHeaders: Record<string, string> = {
-            'User-Agent': 'pan.baidu.com',
-            'Referer': 'https://pan.baidu.com/disk/home'
-          };
-          if (this.cookie) {
-            downloadHeaders['Cookie'] = this.cookie;
-          }
-          return await NetworkClient.getArrayBuffer(dlink, downloadHeaders);
-        }
-      } catch (e) {
-        console.warn('Strategy 1 (filemetas dlink) failed, trying next strategy:', e);
-      }
-    }
-
-    // Strategy 2: PCS direct download via path
-    if (path) {
-      try {
-        let pcsUrl = `https://d.pcs.baidu.com/rest/2.0/pcs/file?method=download&path=${encodeURIComponent(path)}&app_id=250528`;
-        if (this.accessToken) {
-          pcsUrl += `&access_token=${this.accessToken}`;
-        }
-        const downloadHeaders: Record<string, string> = {
-          'User-Agent': 'pan.baidu.com',
-          'Referer': 'https://pan.baidu.com/disk/home'
-        };
-        if (this.cookie) {
-          downloadHeaders['Cookie'] = this.cookie;
-        }
-        return await NetworkClient.getArrayBuffer(pcsUrl, downloadHeaders);
-      } catch (e) {
-        console.warn('Strategy 2 (PCS download) failed, trying next strategy:', e);
-      }
-    }
-
-    // Strategy 3: OpenAPI / rest xpan download
-    if (path && this.accessToken) {
-      const url = `https://pan.baidu.com/rest/2.0/xpan/file?method=download&access_token=${this.accessToken}&path=${encodeURIComponent(path)}`;
-      return await NetworkClient.getArrayBuffer(url, {
-        'User-Agent': 'pan.baidu.com'
-      });
-    }
-
-    throw new Error('获取百度网盘文件下载链接失败，请检查账号 Cookie / Token 是否有效');
   }
 
   private async batchGetFileMetas(fsids: string[]): Promise<Record<string, any>> {
@@ -325,24 +234,6 @@ export class BaiduService {
           for (const item of res.data.info) {
             result[item.fs_id.toString()] = item;
           }
-        } else {
-          // Fallback to web API filemetas for Cookie-based accounts
-          try {
-            const webRes = await NetworkClient.get('https://pan.baidu.com/api/filemetas', {
-              headers: this.getHeaders(),
-              params: {
-                target: `[${chunk.join(',')}]`,
-                dlink: '1'
-              }
-            });
-            if (webRes.data?.errno === 0 && Array.isArray(webRes.data?.info)) {
-              for (const item of webRes.data.info) {
-                result[item.fs_id.toString()] = item;
-              }
-            }
-          } catch (webErr) {
-            console.warn('Web filemetas fallback failed:', webErr);
-          }
         }
       }
     } catch (e) {
@@ -351,4 +242,3 @@ export class BaiduService {
     return result;
   }
 }
-

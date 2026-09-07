@@ -11,9 +11,8 @@ export interface UpdateInfo {
   error?: string;
 }
 
-export const CURRENT_VERSION = '1.0.6';
+export const CURRENT_VERSION = '1.0.5';
 export const GITHUB_REPO = '123guaiguai/drive_comic';
-
 
 export class UpdateService {
   /**

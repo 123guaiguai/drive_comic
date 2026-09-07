@@ -1,7 +1,6 @@
 import React from 'react';
-import { History, Trash2, ArrowRight, BookOpen, HardDrive, FileText } from 'lucide-react';
+import { History, Trash2, ArrowRight, BookOpen, HardDrive } from 'lucide-react';
 import { ReadHistoryItem } from '../types/comic';
-import { isPdfFile } from '../services/naturalSort';
 
 interface HistoryListProps {
   history: ReadHistoryItem[];
@@ -65,71 +64,55 @@ export const HistoryList: React.FC<HistoryListProps> = ({
       </div>
 
       <div className="space-y-2.5">
-        {history.map((item, idx) => {
-          const isPdf = item.isPdf || isPdfFile(item.comicTitle) || isPdfFile(item.chapterTitle);
-
-          return (
-            <div
-              key={`${item.comicId}-${item.chapterId}-${idx}`}
-              onClick={() => onOpenHistory(item)}
-              className="flex items-center justify-between p-3.5 bg-[#1a1a1f] hover:bg-[#202026] border border-gray-800/80 hover:border-indigo-500/30 rounded-xl cursor-pointer transition group"
-            >
-              <div className="flex items-center gap-3 min-w-0">
-                {item.coverUrl ? (
-                  <img
-                    src={item.coverUrl}
-                    alt={item.comicTitle}
-                    className="w-12 h-16 object-cover rounded-lg bg-gray-900 flex-shrink-0"
-                  />
-                ) : (
-                  <div className="w-12 h-16 rounded-lg bg-gray-800 flex items-center justify-center text-gray-500 flex-shrink-0">
-                    {isPdf ? (
-                      <FileText className="w-6 h-6 text-rose-400/70" />
-                    ) : (
-                      <BookOpen className="w-5 h-5 text-indigo-400/70" />
-                    )}
-                  </div>
-                )}
-
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <h4 className="text-sm font-semibold text-gray-200 group-hover:text-indigo-400 transition truncate">
-                      {item.comicTitle}
-                    </h4>
-                    {isPdf && (
-                      <span className="text-[10px] bg-rose-500/20 text-rose-300 border border-rose-500/30 px-1 py-0.2 rounded font-mono">
-                        PDF
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-indigo-300/90 font-medium mt-0.5 truncate">
-                    {item.chapterTitle}
-                  </p>
-                  <div className="flex items-center gap-2 mt-1 text-[11px] text-gray-500">
-                    <span>
-                      进度: 第 {item.pageIndex} / {item.totalPages} 页
-                    </span>
-                    <span>•</span>
-                    <span>{formatTime(item.timestamp)}</span>
-                    <span>•</span>
-                    <span className="flex items-center gap-0.5">
-                      <HardDrive className="w-2.5 h-2.5" />
-                      {item.driveType === 'quark' ? '夸克' : item.driveType === 'baidu' ? '百度' : 'WebDAV'}
-                    </span>
-                  </div>
+        {history.map((item, idx) => (
+          <div
+            key={`${item.comicId}-${item.chapterId}-${idx}`}
+            onClick={() => onOpenHistory(item)}
+            className="flex items-center justify-between p-3.5 bg-[#1a1a1f] hover:bg-[#202026] border border-gray-800/80 hover:border-indigo-500/30 rounded-xl cursor-pointer transition group"
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              {item.coverUrl ? (
+                <img
+                  src={item.coverUrl}
+                  alt={item.comicTitle}
+                  className="w-12 h-16 object-cover rounded-lg bg-gray-900 flex-shrink-0"
+                />
+              ) : (
+                <div className="w-12 h-16 rounded-lg bg-gray-800 flex items-center justify-center text-gray-500 flex-shrink-0">
+                  <BookOpen className="w-5 h-5" />
                 </div>
-              </div>
+              )}
 
-              <div className="pl-3">
-                <div className="w-8 h-8 rounded-full bg-gray-800 group-hover:bg-indigo-600 text-gray-400 group-hover:text-white flex items-center justify-center transition">
-                  <ArrowRight className="w-4 h-4" />
+              <div className="min-w-0">
+                <h4 className="text-sm font-semibold text-gray-200 group-hover:text-indigo-400 transition truncate">
+                  {item.comicTitle}
+                </h4>
+                <p className="text-xs text-indigo-300/90 font-medium mt-0.5 truncate">
+                  {item.chapterTitle}
+                </p>
+                <div className="flex items-center gap-2 mt-1 text-[11px] text-gray-500">
+                  <span>
+                    进度: 第 {item.pageIndex} / {item.totalPages} 页
+                  </span>
+                  <span>•</span>
+                  <span>{formatTime(item.timestamp)}</span>
+                  <span>•</span>
+                  <span className="flex items-center gap-0.5">
+                    <HardDrive className="w-2.5 h-2.5" />
+                    {item.driveType === 'quark' ? '夸克' : item.driveType === 'baidu' ? '百度' : 'WebDAV'}
+                  </span>
                 </div>
               </div>
             </div>
-          );
-        })}
+
+            <div className="pl-3">
+              <div className="w-8 h-8 rounded-full bg-gray-800 group-hover:bg-indigo-600 text-gray-400 group-hover:text-white flex items-center justify-center transition">
+                <ArrowRight className="w-4 h-4" />
+              </div>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
 };
-

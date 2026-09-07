@@ -12,14 +12,12 @@ import {
   HardDrive,
   BookMarked,
   Library,
-  List,
-  FileText
+  List
 } from 'lucide-react';
 import { CloudAccount, DriveItem, ComicBook } from '../types/comic';
 import { DriveManager } from '../services/driveManager';
-import { isImageFile, isPdfFile } from '../services/naturalSort';
+import { isImageFile } from '../services/naturalSort';
 import { ChapterModal, ChapterItemData } from './ChapterModal';
-
 
 interface BreadcrumbItem {
   id: string;
@@ -29,11 +27,10 @@ interface BreadcrumbItem {
 interface ExplorerProps {
   activeAccount: CloudAccount | null;
   onOpenAccountModal: () => void;
-  onReadFolder: (folder: { id: string; name: string; path: string; isPdf?: boolean }, allItems?: DriveItem[]) => void;
+  onReadFolder: (folder: { id: string; name: string; path: string }, allItems?: DriveItem[]) => void;
   onAddToBookshelf: (book: ComicBook) => void;
   bookshelfBookIds: string[];
 }
-
 
 export const Explorer: React.FC<ExplorerProps> = ({
   activeAccount,
@@ -406,90 +403,6 @@ export const Explorer: React.FC<ExplorerProps> = ({
                 );
               }
 
-              // PDF Comic File
-              const isPdf = item.isPdf || isPdfFile(item.name);
-              if (isPdf) {
-                return (
-                  <div
-                    key={item.id}
-                    className="flex items-center justify-between px-3.5 py-3 hover:bg-gray-800/40 transition group cursor-pointer"
-                    onClick={() =>
-                      onReadFolder({
-                        id: item.id,
-                        name: item.name,
-                        path: item.path || item.id,
-                        isPdf: true
-                      })
-                    }
-                  >
-                    <div className="flex-1 flex items-center gap-3 min-w-0">
-                      <div className="w-9 h-9 rounded-xl bg-rose-500/10 text-rose-400 border border-rose-500/20 flex items-center justify-center flex-shrink-0 group-hover:bg-rose-500/20 transition">
-                        <FileText className="w-5 h-5 text-rose-400" />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <p className="text-sm font-medium text-gray-200 group-hover:text-rose-300 transition truncate">
-                            {item.name}
-                          </p>
-                          <span className="text-[10px] bg-rose-500/20 text-rose-300 border border-rose-500/30 px-1.5 py-0.2 rounded font-mono uppercase">
-                            PDF
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-gray-500 mt-0.5">
-                          {item.size ? `${(item.size / (1024 * 1024)).toFixed(1)} MB` : 'PDF 电子书'} · 点击转为漫画阅读
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-1.5 pl-2">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onReadFolder({
-                            id: item.id,
-                            name: item.name,
-                            path: item.path || item.id,
-                            isPdf: true
-                          });
-                        }}
-                        className="p-1.5 rounded-lg text-xs text-rose-400 hover:text-white hover:bg-rose-600/30 transition flex items-center gap-1"
-                        title="阅读此PDF漫画"
-                      >
-                        <Play className="w-3.5 h-3.5 fill-rose-400" />
-                        <span className="text-[11px] hidden sm:inline">阅读</span>
-                      </button>
-
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (!isSaved) {
-                            onAddToBookshelf({
-                              id: item.id,
-                              title: item.name,
-                              driveType: activeAccount.type,
-                              path: item.path || item.id,
-                              isPdf: true
-                            });
-                          }
-                        }}
-                        className={`p-1.5 rounded-lg text-xs transition ${
-                          isSaved
-                            ? 'text-indigo-400'
-                            : 'text-gray-500 hover:text-rose-300 hover:bg-gray-800'
-                        }`}
-                        title={isSaved ? '已在书架' : '加入书架'}
-                      >
-                        {isSaved ? (
-                          <BookMarked className="w-4 h-4 text-indigo-400" />
-                        ) : (
-                          <BookPlus className="w-4 h-4" />
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                );
-              }
-
               // Image or other file
               const isImg = isImageFile(item.name);
               return (
@@ -525,7 +438,6 @@ export const Explorer: React.FC<ExplorerProps> = ({
             })}
           </div>
         )}
-
       </div>
 
       {/* Chapter Directory Modal */}

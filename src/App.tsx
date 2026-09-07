@@ -3,9 +3,7 @@ import { App as CapApp } from '@capacitor/app';
 import { CloudAccount, ComicBook, DriveItem, ReadHistoryItem } from './types/comic';
 import { StorageService } from './services/storage';
 import { DriveManager } from './services/driveManager';
-import { isPdfFile } from './services/naturalSort';
 import { Navbar } from './components/Navbar';
-
 import { Bookshelf } from './components/Bookshelf';
 import { Explorer } from './components/Explorer';
 import { HistoryList } from './components/HistoryList';
@@ -38,11 +36,10 @@ export const App: React.FC = () => {
   const [readingSession, setReadingSession] = useState<{
     comicId: string;
     comicTitle: string;
-    currentChapter: { id: string; name: string; path: string; isPdf?: boolean };
+    currentChapter: { id: string; name: string; path: string };
     initialPage?: number;
     allChapters?: { id: string; name: string; path: string }[];
   } | null>(null);
-
 
   // State refs for native backButton listener
   const readingSessionRef = useRef(readingSession);
@@ -163,22 +160,6 @@ export const App: React.FC = () => {
 
   // Reader Launchers
   const handleOpenBook = async (book: ComicBook) => {
-    // If book is a PDF file
-    if (book.isPdf || isPdfFile(book.title) || isPdfFile(book.path)) {
-      setReadingSession({
-        comicId: book.id,
-        comicTitle: book.title,
-        currentChapter: {
-          id: book.id,
-          name: book.title,
-          path: book.path,
-          isPdf: true
-        },
-        initialPage: book.lastReadPageIndex || 1
-      });
-      return;
-    }
-
     try {
       const struct = await DriveManager.getComicChapters(book.path);
       if (struct.hasSubChapters && struct.chapters.length > 0) {
@@ -236,40 +217,35 @@ export const App: React.FC = () => {
   };
 
   const handleReadFolder = (
-    folder: { id: string; name: string; path: string; isPdf?: boolean },
+    folder: { id: string; name: string; path: string },
     allItems?: DriveItem[]
   ) => {
-    const isPdf = folder.isPdf || isPdfFile(folder.name) || isPdfFile(folder.path);
-
-    // Collect sibling chapter folders if present (for normal series)
-    const siblingChapters = allItems && !isPdf
+    // Collect sibling chapter folders if present
+    const siblingChapters = allItems
       ? allItems.filter((i) => i.isDir).map((i) => ({ id: i.id, name: i.name, path: i.path }))
       : undefined;
 
     setReadingSession({
       comicId: folder.id,
       comicTitle: folder.name,
-      currentChapter: { ...folder, isPdf },
+      currentChapter: folder,
       initialPage: 1,
       allChapters: siblingChapters
     });
   };
 
   const handleOpenHistory = (item: ReadHistoryItem) => {
-    const isPdf = item.isPdf || isPdfFile(item.chapterTitle) || isPdfFile(item.chapterPath);
     setReadingSession({
       comicId: item.comicId,
       comicTitle: item.comicTitle,
       currentChapter: {
         id: item.chapterId,
         name: item.chapterTitle,
-        path: item.chapterPath,
-        isPdf
+        path: item.chapterPath
       },
       initialPage: item.pageIndex
     });
   };
-
 
   // Calculate adjacent chapters
   let prevChapter: { id: string; name: string; path: string } | undefined;
@@ -344,7 +320,6 @@ export const App: React.FC = () => {
         }}
         onReloadAllData={loadData}
       />
-
 
       {/* Fullscreen Comic Reader Modal */}
       {readingSession && (
