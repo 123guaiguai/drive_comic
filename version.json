@@ -1,7 +1,7 @@
 {
-  "version": "1.0.5",
-  "releaseNotes": "1. 彻底解决放大画面漂移与乱动问题：重构多指触控追踪算法，支持平滑焦点跟随\n2. 增加触控过渡重新锚定机制，消除单双指切换及抬手时的跳跃与漂移\n3. 翻页模式增加 touch-action: none 硬件锁，彻底杜绝系统默认手势干扰\n4. 条漫模式优化缩放锚点，精准基于当前视口中心/双击触点对称展开\n5. 全局采用高帧率同步 Ref 计算，杜绝 React 状态异步延迟抖动",
-  "downloadUrl": "https://github.com/123guaiguai/drive_comic/releases/download/v1.0.5/CloudComic.apk",
-  "mirrorUrl": "https://gh-proxy.com/https://github.com/123guaiguai/drive_comic/releases/download/v1.0.5/CloudComic.apk",
-  "publishedAt": "2026-09-06"
+  "version": "1.0.7",
+  "releaseNotes": "1. 恢复纯净稳健的漫画文件夹扫描、多层级章节识别与纯图片顺畅翻页\n2. 保留永久发布签名密钥配置，保障后续无缝覆盖升级\n3. 保留网盘配置编辑、查看与一键导入/导出 JSON 完整备份功能",
+  "downloadUrl": "https://github.com/123guaiguai/drive_comic/releases/download/v1.0.7/CloudComic.apk",
+  "mirrorUrl": "https://gh-proxy.com/https://github.com/123guaiguai/drive_comic/releases/download/v1.0.7/CloudComic.apk",
+  "publishedAt": "2026-09-07"
 }
