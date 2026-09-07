@@ -111,7 +111,7 @@ export class BaiduService {
         const isPdf = !isDir && isPdfFile(item.server_filename);
 
         return {
-          id: item.path,
+          id: item.fs_id ? item.fs_id.toString() : item.path,
           name: item.server_filename,
           path: item.path,
           isDir,
@@ -160,7 +160,7 @@ export class BaiduService {
       const isPdf = !isDir && isPdfFile(item.server_filename);
 
       return {
-        id: item.path,
+        id: item.fs_id ? item.fs_id.toString() : item.path,
         name: item.server_filename,
         path: item.path,
         isDir,
@@ -213,37 +213,86 @@ export class BaiduService {
    * Download file binary data as ArrayBuffer
    */
   async getFileArrayBuffer(filePathOrFsid: string): Promise<ArrayBuffer> {
-    if (this.accessToken) {
-      // If filePathOrFsid is numeric (fs_id), try to fetch dlink directly
-      if (/^\d+$/.test(filePathOrFsid)) {
-        try {
-          const metaMap = await this.batchGetFileMetas([filePathOrFsid]);
-          const meta = metaMap[filePathOrFsid];
-          if (meta?.dlink) {
-            const dlink = meta.dlink.includes('?')
-              ? `${meta.dlink}&access_token=${this.accessToken}`
-              : `${meta.dlink}?access_token=${this.accessToken}`;
-            return await NetworkClient.getArrayBuffer(dlink, {
-              'User-Agent': 'pan.baidu.com'
-            });
-          }
-        } catch (e) {
-          console.warn('Failed to query dlink via filemetas:', e);
-        }
-      }
+    let fsid: string | null = null;
+    let path: string | null = null;
 
-      const url = `https://pan.baidu.com/rest/2.0/xpan/file?method=download&access_token=${this.accessToken}&path=${encodeURIComponent(filePathOrFsid)}`;
+    if (/^\d+$/.test(filePathOrFsid)) {
+      fsid = filePathOrFsid;
+    } else {
+      path = filePathOrFsid;
+    }
+
+    // If we only have path, attempt to look up its fs_id from the parent directory
+    if (!fsid && path) {
+      try {
+        const lastSlash = path.lastIndexOf('/');
+        const parentDir = lastSlash <= 0 ? '/' : path.slice(0, lastSlash);
+        const fileName = path.slice(lastSlash + 1);
+        const res = await this.listFolder(parentDir);
+        const matched = res.items.find((it) => it.name === fileName || it.path === path);
+        if (matched && matched.id && /^\d+$/.test(matched.id)) {
+          fsid = matched.id;
+        }
+      } catch (e) {
+        console.warn('Failed to resolve fs_id from parent folder:', e);
+      }
+    }
+
+    // Strategy 1: If we have fs_id, fetch dlink via filemetas (Works with both Token and Cookie)
+    if (fsid) {
+      try {
+        const metaMap = await this.batchGetFileMetas([fsid]);
+        const meta = metaMap[fsid];
+        if (meta?.dlink) {
+          let dlink = meta.dlink;
+          if (this.accessToken) {
+            dlink = dlink.includes('?')
+              ? `${dlink}&access_token=${this.accessToken}`
+              : `${dlink}?access_token=${this.accessToken}`;
+          }
+          const downloadHeaders: Record<string, string> = {
+            'User-Agent': 'pan.baidu.com',
+            'Referer': 'https://pan.baidu.com/disk/home'
+          };
+          if (this.cookie) {
+            downloadHeaders['Cookie'] = this.cookie;
+          }
+          return await NetworkClient.getArrayBuffer(dlink, downloadHeaders);
+        }
+      } catch (e) {
+        console.warn('Strategy 1 (filemetas dlink) failed, trying next strategy:', e);
+      }
+    }
+
+    // Strategy 2: PCS direct download via path
+    if (path) {
+      try {
+        let pcsUrl = `https://d.pcs.baidu.com/rest/2.0/pcs/file?method=download&path=${encodeURIComponent(path)}&app_id=250528`;
+        if (this.accessToken) {
+          pcsUrl += `&access_token=${this.accessToken}`;
+        }
+        const downloadHeaders: Record<string, string> = {
+          'User-Agent': 'pan.baidu.com',
+          'Referer': 'https://pan.baidu.com/disk/home'
+        };
+        if (this.cookie) {
+          downloadHeaders['Cookie'] = this.cookie;
+        }
+        return await NetworkClient.getArrayBuffer(pcsUrl, downloadHeaders);
+      } catch (e) {
+        console.warn('Strategy 2 (PCS download) failed, trying next strategy:', e);
+      }
+    }
+
+    // Strategy 3: OpenAPI / rest xpan download
+    if (path && this.accessToken) {
+      const url = `https://pan.baidu.com/rest/2.0/xpan/file?method=download&access_token=${this.accessToken}&path=${encodeURIComponent(path)}`;
       return await NetworkClient.getArrayBuffer(url, {
         'User-Agent': 'pan.baidu.com'
       });
     }
 
-    // Try web streaming download with cookie
-    const url = `https://pan.baidu.com/api/download?clienttype=0&app_id=250528&web=1&path=${encodeURIComponent(filePathOrFsid)}`;
-    return await NetworkClient.getArrayBuffer(url, {
-      ...this.getHeaders(),
-      'User-Agent': 'pan.baidu.com'
-    });
+    throw new Error('获取百度网盘文件下载链接失败，请检查账号 Cookie / Token 是否有效');
   }
 
   private async batchGetFileMetas(fsids: string[]): Promise<Record<string, any>> {
@@ -275,6 +324,24 @@ export class BaiduService {
         if (res.data?.errno === 0 && Array.isArray(res.data?.info)) {
           for (const item of res.data.info) {
             result[item.fs_id.toString()] = item;
+          }
+        } else {
+          // Fallback to web API filemetas for Cookie-based accounts
+          try {
+            const webRes = await NetworkClient.get('https://pan.baidu.com/api/filemetas', {
+              headers: this.getHeaders(),
+              params: {
+                target: `[${chunk.join(',')}]`,
+                dlink: '1'
+              }
+            });
+            if (webRes.data?.errno === 0 && Array.isArray(webRes.data?.info)) {
+              for (const item of webRes.data.info) {
+                result[item.fs_id.toString()] = item;
+              }
+            }
+          } catch (webErr) {
+            console.warn('Web filemetas fallback failed:', webErr);
           }
         }
       }
