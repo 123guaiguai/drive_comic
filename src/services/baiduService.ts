@@ -212,15 +212,38 @@ export class BaiduService {
   /**
    * Download file binary data as ArrayBuffer
    */
-  async getFileArrayBuffer(filePath: string): Promise<ArrayBuffer> {
+  async getFileArrayBuffer(filePathOrFsid: string): Promise<ArrayBuffer> {
     if (this.accessToken) {
-      const url = `https://pan.baidu.com/rest/2.0/xpan/file?method=download&access_token=${this.accessToken}&path=${encodeURIComponent(filePath)}`;
-      return await NetworkClient.getArrayBuffer(url, this.getHeaders());
+      // If filePathOrFsid is numeric (fs_id), try to fetch dlink directly
+      if (/^\d+$/.test(filePathOrFsid)) {
+        try {
+          const metaMap = await this.batchGetFileMetas([filePathOrFsid]);
+          const meta = metaMap[filePathOrFsid];
+          if (meta?.dlink) {
+            const dlink = meta.dlink.includes('?')
+              ? `${meta.dlink}&access_token=${this.accessToken}`
+              : `${meta.dlink}?access_token=${this.accessToken}`;
+            return await NetworkClient.getArrayBuffer(dlink, {
+              'User-Agent': 'pan.baidu.com'
+            });
+          }
+        } catch (e) {
+          console.warn('Failed to query dlink via filemetas:', e);
+        }
+      }
+
+      const url = `https://pan.baidu.com/rest/2.0/xpan/file?method=download&access_token=${this.accessToken}&path=${encodeURIComponent(filePathOrFsid)}`;
+      return await NetworkClient.getArrayBuffer(url, {
+        'User-Agent': 'pan.baidu.com'
+      });
     }
 
     // Try web streaming download with cookie
-    const url = `https://pan.baidu.com/api/download?clienttype=0&app_id=250528&web=1&path=${encodeURIComponent(filePath)}`;
-    return await NetworkClient.getArrayBuffer(url, this.getHeaders());
+    const url = `https://pan.baidu.com/api/download?clienttype=0&app_id=250528&web=1&path=${encodeURIComponent(filePathOrFsid)}`;
+    return await NetworkClient.getArrayBuffer(url, {
+      ...this.getHeaders(),
+      'User-Agent': 'pan.baidu.com'
+    });
   }
 
   private async batchGetFileMetas(fsids: string[]): Promise<Record<string, any>> {

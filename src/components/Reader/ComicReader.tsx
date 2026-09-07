@@ -134,7 +134,8 @@ export const ComicReader: React.FC<ComicReaderProps> = ({
     try {
       if (isPdfComic) {
         setLoadingText('正在从网盘下载并解析 PDF 漫画...');
-        const buffer = await DriveManager.getPdfBuffer(currentChapter.id);
+        const targetIdOrPath = currentChapter.path || currentChapter.id;
+        const buffer = await DriveManager.getPdfBuffer(targetIdOrPath);
         setLoadingText('正在渲染 PDF 漫画高清页面...');
         const session = await PdfService.loadPdfFromBuffer(buffer);
 

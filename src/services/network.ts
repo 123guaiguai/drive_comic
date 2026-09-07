@@ -88,6 +88,10 @@ export class NetworkClient {
           responseType: 'arraybuffer'
         });
 
+        if (res.status < 200 || res.status >= 300) {
+          throw new Error(`下载失败 (HTTP ${res.status})`);
+        }
+
         if (res.data instanceof ArrayBuffer) {
           return res.data;
         }
@@ -95,7 +99,8 @@ export class NetworkClient {
         if (typeof res.data === 'string') {
           // Decode base64 to ArrayBuffer
           try {
-            const binaryString = atob(res.data);
+            const cleaned = res.data.replace(/^data:[^;]+;base64,/, '').replace(/[\r\n\s]/g, '');
+            const binaryString = atob(cleaned);
             const len = binaryString.length;
             const bytes = new Uint8Array(len);
             for (let i = 0; i < len; i++) {
@@ -107,20 +112,23 @@ export class NetworkClient {
             const len = res.data.length;
             const bytes = new Uint8Array(len);
             for (let i = 0; i < len; i++) {
-              bytes[i] = res.data.charCodeAt(i);
+              bytes[i] = res.data.charCodeAt(i) & 0xff;
             }
             return bytes.buffer;
           }
         }
-      } catch (nativeErr) {
+      } catch (nativeErr: any) {
         console.warn('CapacitorHttp getArrayBuffer failed, trying fetch fallback:', nativeErr);
+        if (nativeErr?.message && nativeErr.message.includes('HTTP')) {
+          throw nativeErr;
+        }
       }
     }
 
     // Standard / fallback fetch
     const res = await fetch(url, { headers: reqHeaders });
     if (!res.ok) {
-      throw new Error(`下载文件失败 (HTTP ${res.status})`);
+      throw new Error(`下载文件失败 (HTTP ${res.status}: ${res.statusText})`);
     }
     return await res.arrayBuffer();
   }

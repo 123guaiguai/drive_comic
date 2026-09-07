@@ -202,7 +202,6 @@ export class QuarkService {
   async getFileArrayBuffer(fid: string): Promise<ArrayBuffer> {
     const downloadUrl = await this.getPdfDownloadUrl(fid);
     return await NetworkClient.getArrayBuffer(downloadUrl, {
-      ...this.getHeaders(),
       'Referer': 'https://pan.quark.cn/'
     });
   }
