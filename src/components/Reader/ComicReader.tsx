@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ComicPage, ReaderSettings } from '../../types/comic';
+import { CloudDriveType, ComicPage, ReaderSettings } from '../../types/comic';
 import { DriveManager } from '../../services/driveManager';
 import { StorageService } from '../../services/storage';
+import { DownloadService } from '../../services/downloadService';
 import { ReaderHUD } from './ReaderHUD';
 import { WebtoonMode } from './WebtoonMode';
 import { PagerMode } from './PagerMode';
@@ -11,12 +12,13 @@ import { RefreshCw, AlertCircle, ArrowLeft } from 'lucide-react';
 interface ComicReaderProps {
   comicId: string;
   comicTitle: string;
-  currentChapter: { id: string; name: string; path: string };
+  currentChapter: { id: string; name: string; path: string; driveType?: CloudDriveType };
+  driveType?: CloudDriveType;
   initialPage?: number;
-  prevChapter?: { id: string; name: string; path: string };
-  nextChapter?: { id: string; name: string; path: string };
-  allChapters?: { id: string; name: string; path: string }[];
-  onChapterChange: (chapter: { id: string; name: string; path: string }) => void;
+  prevChapter?: { id: string; name: string; path: string; driveType?: CloudDriveType };
+  nextChapter?: { id: string; name: string; path: string; driveType?: CloudDriveType };
+  allChapters?: { id: string; name: string; path: string; driveType?: CloudDriveType }[];
+  onChapterChange: (chapter: { id: string; name: string; path: string; driveType?: CloudDriveType }) => void;
   onClose: () => void;
 }
 
@@ -24,6 +26,7 @@ export const ComicReader: React.FC<ComicReaderProps> = ({
   comicId,
   comicTitle,
   currentChapter,
+  driveType,
   initialPage = 1,
   prevChapter,
   nextChapter,
@@ -31,6 +34,7 @@ export const ComicReader: React.FC<ComicReaderProps> = ({
   onChapterChange,
   onClose
 }) => {
+  const effectiveDriveType: CloudDriveType = currentChapter.driveType || driveType || 'quark';
   const [pages, setPages] = useState<ComicPage[]>([]);
   const [currentPage, setCurrentPage] = useState(initialPage);
   const [targetPage, setTargetPage] = useState<number | undefined>(initialPage);
@@ -38,7 +42,10 @@ export const ComicReader: React.FC<ComicReaderProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [showHUD, setShowHUD] = useState(false);
   const [isChapterModalOpen, setIsChapterModalOpen] = useState(false);
-  const [localChapters, setLocalChapters] = useState<{ id: string; name: string; path: string }[]>(
+  const [isCached, setIsCached] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState<{ done: number; total: number } | null>(null);
+  const [localChapters, setLocalChapters] = useState<{ id: string; name: string; path: string; driveType?: CloudDriveType }[]>(
     allChapters || []
   );
 
@@ -52,7 +59,7 @@ export const ComicReader: React.FC<ComicReaderProps> = ({
       if (parts.length > 1) {
         parts.pop();
         const parentPath = parts.join('/') || '/';
-        DriveManager.getComicChapters(parentPath)
+        DriveManager.getComicChapters(parentPath, effectiveDriveType)
           .then((res) => {
             if (res.hasSubChapters && res.chapters.length > 0) {
               setLocalChapters(res.chapters);
@@ -61,7 +68,7 @@ export const ComicReader: React.FC<ComicReaderProps> = ({
           .catch(() => {});
       }
     }
-  }, [currentChapter.path, allChapters]);
+  }, [currentChapter.path, allChapters, effectiveDriveType]);
 
   // Touch gesture for left-edge swipe to exit (Android full-screen back gesture)
   const edgeStartX = useRef(0);
@@ -114,12 +121,27 @@ export const ComicReader: React.FC<ComicReaderProps> = ({
     StorageService.saveSettings(partial).then(setSettings);
   };
 
-  // Load Chapter Pages
+  // Load Chapter Pages (Checks local offline cache first)
   const loadPages = async () => {
     setLoading(true);
     setError(null);
     try {
-      const pageList = await DriveManager.getChapterPages(currentChapter.id);
+      // 1. Check local offline cache
+      const cached = await DownloadService.getCachedPages(currentChapter.id);
+      if (cached && cached.length > 0) {
+        setPages(cached);
+        setIsCached(true);
+        const validPage = Math.min(Math.max(1, initialPage), cached.length);
+        setCurrentPage(validPage);
+        setTargetPage(validPage);
+        setLoading(false);
+        return;
+      }
+
+      setIsCached(false);
+
+      // 2. Fallback to Cloud Drive
+      const pageList = await DriveManager.getChapterPages(currentChapter.id, effectiveDriveType);
       if (pageList.length === 0) {
         setError('该文件夹中未找到支持的漫画图片（支持 jpg, png, webp, gif 等）');
       } else {
@@ -142,21 +164,20 @@ export const ComicReader: React.FC<ComicReaderProps> = ({
   // Record reading progress to history
   useEffect(() => {
     if (pages.length > 0 && currentPage >= 1) {
-      const activeAccount = DriveManager.getActiveAccount();
       StorageService.updateHistory({
         comicId,
         comicTitle,
         chapterId: currentChapter.id,
         chapterTitle: currentChapter.name,
         chapterPath: currentChapter.path,
-        driveType: activeAccount?.type || 'quark',
+        driveType: effectiveDriveType,
         pageIndex: currentPage,
         totalPages: pages.length,
         timestamp: Date.now(),
         coverUrl: pages[0]?.thumbnailUrl || pages[0]?.url
       });
     }
-  }, [currentPage, pages.length, currentChapter.id]);
+  }, [currentPage, pages.length, currentChapter.id, effectiveDriveType]);
 
   const handlePageVisible = (index: number) => {
     setCurrentPage(index);
@@ -175,6 +196,39 @@ export const ComicReader: React.FC<ComicReaderProps> = ({
         return p;
       })
     );
+  };
+
+  // Download chapter to local IndexedDB
+  const handleDownloadChapter = async () => {
+    if (pages.length === 0 || isDownloading || isCached) return;
+    setIsDownloading(true);
+    setDownloadProgress({ done: 0, total: pages.length });
+    try {
+      await DownloadService.cacheChapter({
+        comicId,
+        comicTitle,
+        chapterId: currentChapter.id,
+        chapterTitle: currentChapter.name,
+        driveType: effectiveDriveType,
+        pages,
+        onProgress: (done, total) => setDownloadProgress({ done, total })
+      });
+      setIsCached(true);
+    } catch (e: any) {
+      alert(e.message || '下载离线缓存失败');
+    } finally {
+      setIsDownloading(false);
+      setDownloadProgress(null);
+    }
+  };
+
+  // Delete local cached chapter
+  const handleDeleteCache = async () => {
+    if (window.confirm('确定要删除本话的本地离线缓存吗？')) {
+      await DownloadService.deleteCachedChapter(currentChapter.id);
+      setIsCached(false);
+      loadPages();
+    }
   };
 
   const currentChapterIndex = localChapters.findIndex((c) => c.id === currentChapter.id);
@@ -274,6 +328,11 @@ export const ComicReader: React.FC<ComicReaderProps> = ({
         onOpenChapterModal={() => setIsChapterModalOpen(true)}
         allChaptersCount={localChapters.length}
         currentChapterIndex={currentChapterIndex >= 0 ? currentChapterIndex : undefined}
+        isCached={isCached}
+        isDownloading={isDownloading}
+        downloadProgress={downloadProgress}
+        onDownloadChapter={handleDownloadChapter}
+        onDeleteCache={handleDeleteCache}
       />
 
       {/* Chapter Selection Drawer / Modal */}

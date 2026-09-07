@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { App as CapApp } from '@capacitor/app';
-import { CloudAccount, ComicBook, DriveItem, ReadHistoryItem } from './types/comic';
+import { CloudAccount, CloudDriveType, ComicBook, DriveItem, ReadHistoryItem } from './types/comic';
 import { StorageService } from './services/storage';
 import { DriveManager } from './services/driveManager';
 import { Navbar } from './components/Navbar';
@@ -27,6 +27,7 @@ export const App: React.FC = () => {
   const [bookshelfModalState, setBookshelfModalState] = useState<{
     title: string;
     chapters: ChapterItemData[];
+    driveType: CloudDriveType;
   } | null>(null);
 
   const [bookshelf, setBookshelf] = useState<ComicBook[]>([]);
@@ -36,9 +37,10 @@ export const App: React.FC = () => {
   const [readingSession, setReadingSession] = useState<{
     comicId: string;
     comicTitle: string;
-    currentChapter: { id: string; name: string; path: string };
+    driveType: CloudDriveType;
+    currentChapter: { id: string; name: string; path: string; driveType?: CloudDriveType };
     initialPage?: number;
-    allChapters?: { id: string; name: string; path: string }[];
+    allChapters?: { id: string; name: string; path: string; driveType?: CloudDriveType }[];
   } | null>(null);
 
   // State refs for native backButton listener
@@ -161,7 +163,7 @@ export const App: React.FC = () => {
   // Reader Launchers
   const handleOpenBook = async (book: ComicBook) => {
     try {
-      const struct = await DriveManager.getComicChapters(book.path);
+      const struct = await DriveManager.getComicChapters(book.path, book.driveType);
       if (struct.hasSubChapters && struct.chapters.length > 0) {
         let targetChapter = struct.chapters[0];
         let initialPage = 1;
@@ -177,7 +179,8 @@ export const App: React.FC = () => {
         setReadingSession({
           comicId: book.id,
           comicTitle: book.title,
-          currentChapter: targetChapter,
+          driveType: book.driveType,
+          currentChapter: { ...targetChapter, driveType: book.driveType },
           initialPage,
           allChapters: struct.chapters
         });
@@ -191,10 +194,12 @@ export const App: React.FC = () => {
     setReadingSession({
       comicId: book.id,
       comicTitle: book.title,
+      driveType: book.driveType,
       currentChapter: {
         id: book.lastReadChapterId || book.path,
         name: book.lastReadChapterTitle || book.title,
-        path: book.lastReadChapterId || book.path
+        path: book.lastReadChapterId || book.path,
+        driveType: book.driveType
       },
       initialPage: book.lastReadPageIndex || 1
     });
@@ -202,11 +207,12 @@ export const App: React.FC = () => {
 
   const handleExploreBookFolder = async (book: ComicBook) => {
     try {
-      const struct = await DriveManager.getComicChapters(book.path);
+      const struct = await DriveManager.getComicChapters(book.path, book.driveType);
       if (struct.hasSubChapters && struct.chapters.length > 0) {
         setBookshelfModalState({
           title: book.title,
-          chapters: struct.chapters
+          chapters: struct.chapters,
+          driveType: book.driveType
         });
         return;
       }
@@ -220,15 +226,24 @@ export const App: React.FC = () => {
     folder: { id: string; name: string; path: string },
     allItems?: DriveItem[]
   ) => {
+    const currentDriveType = activeAccount?.type || 'quark';
     // Collect sibling chapter folders if present
     const siblingChapters = allItems
-      ? allItems.filter((i) => i.isDir).map((i) => ({ id: i.id, name: i.name, path: i.path }))
+      ? allItems
+          .filter((i) => i.isDir)
+          .map((i) => ({
+            id: i.id,
+            name: i.name,
+            path: i.path,
+            driveType: currentDriveType
+          }))
       : undefined;
 
     setReadingSession({
       comicId: folder.id,
       comicTitle: folder.name,
-      currentChapter: folder,
+      driveType: currentDriveType,
+      currentChapter: { ...folder, driveType: currentDriveType },
       initialPage: 1,
       allChapters: siblingChapters
     });
@@ -238,10 +253,12 @@ export const App: React.FC = () => {
     setReadingSession({
       comicId: item.comicId,
       comicTitle: item.comicTitle,
+      driveType: item.driveType,
       currentChapter: {
         id: item.chapterId,
         name: item.chapterTitle,
-        path: item.chapterPath
+        path: item.chapterPath,
+        driveType: item.driveType
       },
       initialPage: item.pageIndex
     });
@@ -327,12 +344,21 @@ export const App: React.FC = () => {
           comicId={readingSession.comicId}
           comicTitle={readingSession.comicTitle}
           currentChapter={readingSession.currentChapter}
+          driveType={readingSession.driveType}
           initialPage={readingSession.initialPage}
           prevChapter={prevChapter}
           nextChapter={nextChapter}
           allChapters={readingSession.allChapters}
           onChapterChange={(chap) => {
-            setReadingSession((prev) => (prev ? { ...prev, currentChapter: chap, initialPage: 1 } : null));
+            setReadingSession((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    currentChapter: { ...chap, driveType: prev.driveType },
+                    initialPage: 1
+                  }
+                : null
+            );
           }}
           onClose={() => {
             setReadingSession(null);
@@ -361,7 +387,8 @@ export const App: React.FC = () => {
             setReadingSession({
               comicId: chap.id,
               comicTitle: bookshelfModalState.title,
-              currentChapter: chap,
+              driveType: bookshelfModalState.driveType,
+              currentChapter: { ...chap, driveType: bookshelfModalState.driveType },
               initialPage: 1,
               allChapters: bookshelfModalState.chapters
             });

@@ -1,6 +1,8 @@
 import React from 'react';
 import { BookMarked, Play, Trash2, Folder, Sparkles, HardDrive } from 'lucide-react';
 import { ComicBook } from '../types/comic';
+import { DriveManager } from '../services/driveManager';
+import { StorageService } from '../services/storage';
 
 interface BookshelfProps {
   books: ComicBook[];
@@ -17,6 +19,23 @@ export const Bookshelf: React.FC<BookshelfProps> = ({
   onRemoveBook,
   onNavigateToExplorer
 }) => {
+  const [imageErrors, setImageErrors] = React.useState<Record<string, boolean>>({});
+
+  // Asynchronously try to fetch missing covers for books without cover or broken cover
+  React.useEffect(() => {
+    books.forEach((book) => {
+      if (!book.coverUrl || imageErrors[book.id]) {
+        DriveManager.getCoverForFolder(book.path, book.driveType)
+          .then((cover) => {
+            if (cover && cover !== book.coverUrl) {
+              StorageService.addToBookshelf({ ...book, coverUrl: cover });
+            }
+          })
+          .catch(() => {});
+      }
+    });
+  }, [books.length]);
+
   if (books.length === 0) {
     return (
       <div className="max-w-md mx-auto px-4 py-16 text-center">
@@ -52,6 +71,7 @@ export const Bookshelf: React.FC<BookshelfProps> = ({
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
         {books.map((book) => {
           const hasProgress = book.lastReadChapterTitle && book.lastReadPageIndex !== undefined;
+          const hasBrokenImage = imageErrors[book.id];
 
           return (
             <div
@@ -63,13 +83,16 @@ export const Bookshelf: React.FC<BookshelfProps> = ({
                 onClick={() => onOpenBook(book)}
                 className="relative aspect-[3/4] bg-gray-900 overflow-hidden cursor-pointer flex items-center justify-center"
               >
-                {book.coverUrl ? (
+                {book.coverUrl && !hasBrokenImage ? (
                   <img
                     src={book.coverUrl}
                     alt={book.title}
                     referrerPolicy="no-referrer"
                     className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
                     loading="lazy"
+                    onError={() => {
+                      setImageErrors((prev) => ({ ...prev, [book.id]: true }));
+                    }}
                   />
                 ) : (
                   <div className="flex flex-col items-center justify-center p-4 text-center">

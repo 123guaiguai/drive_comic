@@ -226,17 +226,28 @@ export const Explorer: React.FC<ExplorerProps> = ({
           {/* Quick Add current folder to Bookshelf */}
           {breadcrumbs.length > 1 && (
             <button
-              onClick={() => {
+              onClick={async () => {
                 const isSaved = bookshelfBookIds.includes(currentFolder.id);
                 if (!isSaved) {
                   const firstImg = currentImages[0]?.thumbnail || undefined;
-                  onAddToBookshelf({
+                  const newBook: ComicBook = {
                     id: currentFolder.id,
                     title: currentFolder.name,
                     driveType: activeAccount.type,
                     path: currentFolder.id,
                     coverUrl: firstImg
-                  });
+                  };
+                  onAddToBookshelf(newBook);
+
+                  if (!firstImg) {
+                    DriveManager.getCoverForFolder(currentFolder.id, activeAccount.type).then(
+                      (cover) => {
+                        if (cover) {
+                          onAddToBookshelf({ ...newBook, coverUrl: cover });
+                        }
+                      }
+                    );
+                  }
                 }
               }}
               className={`p-1.5 rounded-lg text-xs flex items-center gap-1 border transition flex-shrink-0 ${
@@ -372,12 +383,20 @@ export const Explorer: React.FC<ExplorerProps> = ({
                         onClick={(e) => {
                           e.stopPropagation();
                           if (!isSaved) {
-                            onAddToBookshelf({
+                            const newBook: ComicBook = {
                               id: item.id,
                               title: item.name,
                               driveType: activeAccount.type,
                               path: item.id
-                            });
+                            };
+                            onAddToBookshelf(newBook);
+                            DriveManager.getCoverForFolder(item.id, activeAccount.type).then(
+                              (cover) => {
+                                if (cover) {
+                                  onAddToBookshelf({ ...newBook, coverUrl: cover });
+                                }
+                              }
+                            );
                           }
                         }}
                         className={`p-1.5 rounded-lg text-xs transition ${

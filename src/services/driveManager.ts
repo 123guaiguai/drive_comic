@@ -1,4 +1,4 @@
-import { CloudAccount, ComicPage, DriveItem } from '../types/comic';
+import { CloudAccount, CloudDriveType, ComicPage, DriveItem } from '../types/comic';
 import { BaiduService } from './baiduService';
 import { QuarkService } from './quarkService';
 import { StorageService } from './storage';
@@ -48,27 +48,97 @@ export class DriveManager {
     return this.currentAccount;
   }
 
-  static async listFolder(folderIdOrPath: string = ''): Promise<{ items: DriveItem[]; hasMore?: boolean }> {
+  /**
+   * Get specific driver service based on driveType or fallback to active account
+   */
+  private static async getDriverService(driveType?: CloudDriveType): Promise<{
+    type: CloudDriveType;
+    service: QuarkService | BaiduService | WebDavService;
+  }> {
+    // If driveType is specified and differs from currentAccount type, find corresponding account
+    if (driveType && (!this.currentAccount || this.currentAccount.type !== driveType)) {
+      const accounts = await StorageService.getAccounts();
+      const targetAcc = accounts.find((a) => a.type === driveType);
+      if (targetAcc) {
+        if (targetAcc.type === 'quark' && targetAcc.quarkCookie) {
+          return { type: 'quark', service: new QuarkService(targetAcc.quarkCookie) };
+        }
+        if (targetAcc.type === 'baidu') {
+          return {
+            type: 'baidu',
+            service: new BaiduService(targetAcc.baiduCookie, targetAcc.baiduAccessToken)
+          };
+        }
+        if (targetAcc.type === 'webdav' && targetAcc.webdavUrl) {
+          return {
+            type: 'webdav',
+            service: new WebDavService(
+              targetAcc.webdavUrl,
+              targetAcc.webdavUsername,
+              targetAcc.webdavPassword
+            )
+          };
+        }
+      }
+    }
+
+    // Default to currently active account
     if (!this.currentAccount) {
       throw new Error('未选择或未连接网盘账号，请先在右上角添加网盘');
     }
 
     if (this.currentAccount.type === 'quark') {
+      if (!this.quarkService && this.currentAccount.quarkCookie) {
+        this.quarkService = new QuarkService(this.currentAccount.quarkCookie);
+      }
       if (!this.quarkService) throw new Error('夸克网盘未配置 Cookie');
-      const fid = folderIdOrPath || '0';
-      return await this.quarkService.listFolder(fid);
+      return { type: 'quark', service: this.quarkService };
     }
 
     if (this.currentAccount.type === 'baidu') {
-      if (!this.baiduService) throw new Error('百度网盘未配置 Cookie 或 Token');
-      const path = folderIdOrPath || '/';
-      return await this.baiduService.listFolder(path);
+      if (!this.baiduService) {
+        this.baiduService = new BaiduService(
+          this.currentAccount.baiduCookie,
+          this.currentAccount.baiduAccessToken
+        );
+      }
+      return { type: 'baidu', service: this.baiduService };
     }
 
     if (this.currentAccount.type === 'webdav') {
+      if (!this.webdavService && this.currentAccount.webdavUrl) {
+        this.webdavService = new WebDavService(
+          this.currentAccount.webdavUrl,
+          this.currentAccount.webdavUsername,
+          this.currentAccount.webdavPassword
+        );
+      }
       if (!this.webdavService) throw new Error('WebDAV 服务未配置');
+      return { type: 'webdav', service: this.webdavService };
+    }
+
+    throw new Error('不支持的网盘类型');
+  }
+
+  static async listFolder(
+    folderIdOrPath: string = '',
+    driveType?: CloudDriveType
+  ): Promise<{ items: DriveItem[]; hasMore?: boolean }> {
+    const driver = await this.getDriverService(driveType);
+
+    if (driver.type === 'quark') {
+      const fid = folderIdOrPath || '0';
+      return await (driver.service as QuarkService).listFolder(fid);
+    }
+
+    if (driver.type === 'baidu') {
       const path = folderIdOrPath || '/';
-      return await this.webdavService.listFolder(path);
+      return await (driver.service as BaiduService).listFolder(path);
+    }
+
+    if (driver.type === 'webdav') {
+      const path = folderIdOrPath || '/';
+      return await (driver.service as WebDavService).listFolder(path);
     }
 
     throw new Error('不支持的网盘类型');
@@ -77,15 +147,19 @@ export class DriveManager {
   /**
    * Analyze folder structure: check if it contains chapter subfolders or direct images
    */
-  static async getComicChapters(folderIdOrPath: string): Promise<{
+  static async getComicChapters(
+    folderIdOrPath: string,
+    driveType?: CloudDriveType
+  ): Promise<{
     hasSubChapters: boolean;
-    chapters: { id: string; name: string; path: string }[];
+    chapters: { id: string; name: string; path: string; driveType: CloudDriveType }[];
     directImagesCount: number;
     parentPath?: string;
   }> {
-    const res = await this.listFolder(folderIdOrPath);
+    const res = await this.listFolder(folderIdOrPath, driveType);
     const subfolders = res.items.filter((it) => it.isDir);
     const directImages = res.items.filter((it) => !it.isDir && isImageFile(it.name));
+    const effectiveType = driveType || this.currentAccount?.type || 'quark';
 
     if (subfolders.length > 0) {
       subfolders.sort((a, b) => naturalCompare(a.name, b.name));
@@ -94,7 +168,8 @@ export class DriveManager {
         chapters: subfolders.map((s) => ({
           id: s.id,
           name: s.name,
-          path: s.path || s.id
+          path: s.path || s.id,
+          driveType: effectiveType
         })),
         directImagesCount: directImages.length,
         parentPath: folderIdOrPath
@@ -109,31 +184,29 @@ export class DriveManager {
     };
   }
 
-  static async getChapterPages(folderIdOrPath: string): Promise<ComicPage[]> {
-    if (!this.currentAccount) {
-      throw new Error('请先选择网盘账号');
-    }
+  static async getChapterPages(
+    folderIdOrPath: string,
+    driveType?: CloudDriveType
+  ): Promise<ComicPage[]> {
+    const driver = await this.getDriverService(driveType);
 
     let pages: ComicPage[] = [];
 
-    if (this.currentAccount.type === 'quark') {
-      if (!this.quarkService) throw new Error('夸克网盘未就绪');
-      pages = await this.quarkService.getChapterPages(folderIdOrPath);
-    } else if (this.currentAccount.type === 'baidu') {
-      if (!this.baiduService) throw new Error('百度网盘未就绪');
-      pages = await this.baiduService.getChapterPages(folderIdOrPath);
-    } else if (this.currentAccount.type === 'webdav') {
-      if (!this.webdavService) throw new Error('WebDAV 服务未就绪');
-      pages = await this.webdavService.getChapterPages(folderIdOrPath);
+    if (driver.type === 'quark') {
+      pages = await (driver.service as QuarkService).getChapterPages(folderIdOrPath);
+    } else if (driver.type === 'baidu') {
+      pages = await (driver.service as BaiduService).getChapterPages(folderIdOrPath);
+    } else if (driver.type === 'webdav') {
+      pages = await (driver.service as WebDavService).getChapterPages(folderIdOrPath);
     }
 
     // If folder itself has no images, check if it's a comic parent folder with chapter subfolders
     if (pages.length === 0) {
       try {
-        const structure = await this.getComicChapters(folderIdOrPath);
+        const structure = await this.getComicChapters(folderIdOrPath, driver.type);
         if (structure.hasSubChapters && structure.chapters.length > 0) {
           const firstChapter = structure.chapters[0];
-          return await this.getChapterPages(firstChapter.id);
+          return await this.getChapterPages(firstChapter.id, driver.type);
         }
       } catch (e) {
         console.warn('Auto subfolder resolution failed:', e);
@@ -142,4 +215,38 @@ export class DriveManager {
 
     return pages;
   }
+
+  /**
+   * Intelligently retrieve a cover URL for a comic folder (even if it's a multi-chapter folder)
+   */
+  static async getCoverForFolder(
+    folderIdOrPath: string,
+    driveType?: CloudDriveType
+  ): Promise<string | undefined> {
+    try {
+      const res = await this.listFolder(folderIdOrPath, driveType);
+      const directImages = res.items.filter((it) => !it.isDir && isImageFile(it.name));
+      if (directImages.length > 0) {
+        directImages.sort((a, b) => naturalCompare(a.name, b.name));
+        return directImages[0].thumbnail;
+      }
+
+      // Check subchapters
+      const subfolders = res.items.filter((it) => it.isDir);
+      if (subfolders.length > 0) {
+        subfolders.sort((a, b) => naturalCompare(a.name, b.name));
+        const firstSub = subfolders[0];
+        const subRes = await this.listFolder(firstSub.path || firstSub.id, driveType);
+        const subImages = subRes.items.filter((it) => !it.isDir && isImageFile(it.name));
+        if (subImages.length > 0) {
+          subImages.sort((a, b) => naturalCompare(a.name, b.name));
+          return subImages[0].thumbnail;
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to retrieve cover for folder:', e);
+    }
+    return undefined;
+  }
 }
+

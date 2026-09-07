@@ -9,7 +9,11 @@ import {
   Sparkles,
   Columns,
   Rows,
-  List
+  List,
+  Download,
+  CheckCircle2,
+  RefreshCw,
+  Trash2
 } from 'lucide-react';
 import { ReadingMode, ReaderSettings } from '../../types/comic';
 
@@ -31,6 +35,11 @@ interface ReaderHUDProps {
   onOpenChapterModal?: () => void;
   allChaptersCount?: number;
   currentChapterIndex?: number;
+  isCached?: boolean;
+  isDownloading?: boolean;
+  downloadProgress?: { done: number; total: number } | null;
+  onDownloadChapter?: () => void;
+  onDeleteCache?: () => void;
 }
 
 export const ReaderHUD: React.FC<ReaderHUDProps> = ({
@@ -50,14 +59,24 @@ export const ReaderHUD: React.FC<ReaderHUDProps> = ({
   onToggleHUD,
   onOpenChapterModal,
   allChaptersCount,
-  currentChapterIndex
+  currentChapterIndex,
+  isCached = false,
+  isDownloading = false,
+  downloadProgress = null,
+  onDownloadChapter,
+  onDeleteCache
 }) => {
   const [showSettingsDrawer, setShowSettingsDrawer] = React.useState(false);
 
   if (!showHUD) {
     // When HUD is hidden, show a subtle floating page number badge in bottom right corner
     return (
-      <div className="fixed bottom-3 right-3 z-30 pointer-events-none">
+      <div className="fixed bottom-3 right-3 z-30 pointer-events-none flex items-center gap-1.5">
+        {isCached && (
+          <span className="bg-emerald-950/80 backdrop-blur-md text-emerald-400 text-[10px] font-mono px-1.5 py-0.5 rounded-full border border-emerald-500/30 shadow-sm flex items-center gap-0.5">
+            <CheckCircle2 className="w-2.5 h-2.5" /> 离线
+          </span>
+        )}
         <div className="bg-black/60 backdrop-blur-md text-gray-300 text-[11px] font-mono px-2 py-0.5 rounded-full border border-white/10 shadow-sm">
           {currentPage} / {totalPages || 1}
         </div>
@@ -93,11 +112,52 @@ export const ReaderHUD: React.FC<ReaderHUDProps> = ({
             </button>
             <div className="min-w-0">
               <h2 className="text-sm font-bold text-white truncate">{title}</h2>
-              <p className="text-xs text-indigo-300 truncate">{chapterTitle}</p>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <p className="text-xs text-indigo-300 truncate">{chapterTitle}</p>
+                {isCached && (
+                  <span className="text-[10px] bg-emerald-950/80 text-emerald-400 border border-emerald-500/40 px-1.5 py-0.2 rounded font-mono">
+                    已离线
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 
           <div className="flex items-center gap-1.5">
+            {/* Download / Offline Cache Button */}
+            {isDownloading ? (
+              <div className="flex items-center gap-1 px-2.5 py-1.5 bg-indigo-950/70 border border-indigo-500/40 rounded-xl text-xs text-indigo-200 shadow-inner">
+                <RefreshCw className="w-3.5 h-3.5 animate-spin text-indigo-400" />
+                <span>
+                  {downloadProgress
+                    ? `${downloadProgress.done}/${downloadProgress.total}`
+                    : '下载中...'}
+                </span>
+              </div>
+            ) : isCached ? (
+              <button
+                onClick={onDeleteCache}
+                className="flex items-center gap-1 px-2.5 py-1.5 bg-emerald-950/60 hover:bg-rose-950/60 border border-emerald-500/40 hover:border-rose-500/40 text-emerald-300 hover:text-rose-300 rounded-xl text-xs font-medium transition group"
+                title="已缓存到本地，点击可清除缓存"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5 group-hover:hidden" />
+                <Trash2 className="w-3.5 h-3.5 hidden group-hover:inline text-rose-400" />
+                <span className="group-hover:hidden">已缓存</span>
+                <span className="hidden group-hover:inline">删除缓存</span>
+              </button>
+            ) : (
+              onDownloadChapter && (
+                <button
+                  onClick={onDownloadChapter}
+                  className="flex items-center gap-1 px-2.5 py-1.5 bg-white/10 hover:bg-white/20 border border-white/15 rounded-xl text-xs font-medium text-gray-200 hover:text-white transition active:scale-95"
+                  title="下载整话到本地离线"
+                >
+                  <Download className="w-3.5 h-3.5 text-indigo-400" />
+                  <span className="hidden sm:inline">下载本话</span>
+                </button>
+              )
+            )}
+
             {onOpenChapterModal && (
               <button
                 onClick={onOpenChapterModal}
