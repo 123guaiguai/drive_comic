@@ -372,6 +372,7 @@ export const WebtoonMode: React.FC<WebtoonModeProps> = ({
                 src={page.url}
                 alt={`Page ${page.index}`}
                 loading={idx < 5 ? 'eager' : 'lazy'}
+                referrerPolicy="no-referrer"
                 draggable={false}
                 className="w-full h-auto block select-none pointer-events-none comic-page-img"
                 onError={() => onRetryPage(page.id)}

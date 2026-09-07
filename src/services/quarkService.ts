@@ -2,6 +2,13 @@ import { DriveItem, ComicPage } from '../types/comic';
 import { isImageFile, naturalCompare } from './naturalSort';
 import { NetworkClient } from './network';
 
+export interface QuarkFileUrls {
+  previewUrl?: string;
+  downloadUrl?: string;
+  bigThumbnail?: string;
+  thumbnail?: string;
+}
+
 export class QuarkService {
   private cookie: string;
 
@@ -81,6 +88,7 @@ export class QuarkService {
 
     const items: DriveItem[] = rawList.map((item) => {
       const isDir = item.file_type === 0 || item.format_type === 'folder';
+      const preview = item.preview_url || item.big_thumbnail || item.thumbnail;
       return {
         id: item.fid,
         name: item.file_name,
@@ -89,7 +97,7 @@ export class QuarkService {
         size: item.size,
         updatedAt: item.updated_at,
         driveType: 'quark',
-        thumbnail: item.thumbnail || undefined,
+        thumbnail: preview || undefined,
         hasImages: isDir ? undefined : isImageFile(item.file_name)
       };
     });
@@ -139,21 +147,27 @@ export class QuarkService {
     const fids = imageFiles.map((f) => f.id);
     const downloadMap = await this.batchGetDownloadUrls(fids);
 
-    return imageFiles.map((f, idx) => ({
-      id: f.id,
-      index: idx + 1,
-      filename: f.name,
-      url: downloadMap[f.id] || '',
-      downloadUrl: downloadMap[f.id] || '',
-      thumbnailUrl: f.thumbnail
-    }));
+    return imageFiles.map((f, idx) => {
+      const info = downloadMap[f.id];
+      // Quark preview_url is the HD preview with token authentication (works directly in browser/webview with no-referrer).
+      // Fallback to download_url, bigThumbnail, or list thumbnail if not available.
+      const url = info?.previewUrl || info?.downloadUrl || f.thumbnail || '';
+      return {
+        id: f.id,
+        index: idx + 1,
+        filename: f.name,
+        url,
+        downloadUrl: info?.downloadUrl || url,
+        thumbnailUrl: info?.bigThumbnail || info?.thumbnail || f.thumbnail
+      };
+    });
   }
 
   /**
    * Batch get direct download / image URLs
    */
-  async batchGetDownloadUrls(fids: string[]): Promise<Record<string, string>> {
-    const result: Record<string, string> = {};
+  async batchGetDownloadUrls(fids: string[]): Promise<Record<string, QuarkFileUrls>> {
+    const result: Record<string, QuarkFileUrls> = {};
     if (fids.length === 0) return result;
 
     // Quark allows batch downloading up to 50-100 files at a time
@@ -169,8 +183,13 @@ export class QuarkService {
 
         if (res.data?.code === 0 && Array.isArray(res.data?.data)) {
           for (const item of res.data.data) {
-            if (item.fid && item.download_url) {
-              result[item.fid] = item.download_url;
+            if (item.fid) {
+              result[item.fid] = {
+                previewUrl: item.preview_url,
+                downloadUrl: item.download_url,
+                bigThumbnail: item.big_thumbnail,
+                thumbnail: item.thumbnail
+              };
             }
           }
         }

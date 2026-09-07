@@ -67,6 +67,7 @@ export const Bookshelf: React.FC<BookshelfProps> = ({
                   <img
                     src={book.coverUrl}
                     alt={book.title}
+                    referrerPolicy="no-referrer"
                     className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
                     loading="lazy"
                   />

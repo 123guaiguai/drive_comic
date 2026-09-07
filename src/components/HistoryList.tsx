@@ -75,6 +75,7 @@ export const HistoryList: React.FC<HistoryListProps> = ({
                 <img
                   src={item.coverUrl}
                   alt={item.comicTitle}
+                  referrerPolicy="no-referrer"
                   className="w-12 h-16 object-cover rounded-lg bg-gray-900 flex-shrink-0"
                 />
               ) : (

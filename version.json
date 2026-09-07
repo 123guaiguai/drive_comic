@@ -1,7 +1,7 @@
 {
-  "version": "1.0.7",
-  "releaseNotes": "1. 恢复纯净稳健的漫画文件夹扫描、多层级章节识别与纯图片顺畅翻页\n2. 保留永久发布签名密钥配置，保障后续无缝覆盖升级\n3. 保留网盘配置编辑、查看与一键导入/导出 JSON 完整备份功能",
-  "downloadUrl": "https://github.com/123guaiguai/drive_comic/releases/download/v1.0.7/CloudComic.apk",
-  "mirrorUrl": "https://gh-proxy.com/https://github.com/123guaiguai/drive_comic/releases/download/v1.0.7/CloudComic.apk",
+  "version": "1.0.8",
+  "releaseNotes": "1. 彻底修复夸克网盘（Quark Drive）打开漫画文件夹渲染失败、图片全黑的问题\n2. 适配夸克高清 Preview/Quick/Thumbnail 带权访问机制，并补充全局 no-referrer 防盗链穿透\n3. 优化章节图片加载重试与缩略图兜底机制",
+  "downloadUrl": "https://github.com/123guaiguai/drive_comic/releases/download/v1.0.8/CloudComic.apk",
+  "mirrorUrl": "https://gh-proxy.com/https://github.com/123guaiguai/drive_comic/releases/download/v1.0.8/CloudComic.apk",
   "publishedAt": "2026-09-07"
 }

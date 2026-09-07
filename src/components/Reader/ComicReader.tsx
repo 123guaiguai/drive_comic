@@ -164,7 +164,16 @@ export const ComicReader: React.FC<ComicReaderProps> = ({
 
   const handleRetryPage = (pageId: string) => {
     setPages((prev) =>
-      prev.map((p) => (p.id === pageId ? { ...p, error: false, url: `${p.url}#retry=${Date.now()}` } : p))
+      prev.map((p) => {
+        if (p.id === pageId) {
+          const nextUrl =
+            !p.url.includes('#retry') && p.thumbnailUrl && p.thumbnailUrl !== p.url
+              ? p.thumbnailUrl
+              : `${p.url.split('#')[0]}#retry=${Date.now()}`;
+          return { ...p, error: false, url: nextUrl };
+        }
+        return p;
+      })
     );
   };
 

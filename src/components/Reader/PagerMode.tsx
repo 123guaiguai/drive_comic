@@ -372,6 +372,7 @@ export const PagerMode: React.FC<PagerModeProps> = ({
           <img
             src={activePage.url}
             alt={`Page ${activePage.index}`}
+            referrerPolicy="no-referrer"
             draggable={false}
             className="max-w-full max-h-full object-contain pointer-events-none user-select-none"
             onError={() => onRetryPage(activePage.id)}
@@ -401,6 +402,7 @@ export const PagerMode: React.FC<PagerModeProps> = ({
         <img
           src={pages[currentPage].url}
           alt="preload"
+          referrerPolicy="no-referrer"
           className="hidden"
           loading="eager"
         />

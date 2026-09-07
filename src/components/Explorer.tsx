@@ -416,6 +416,7 @@ export const Explorer: React.FC<ExplorerProps> = ({
                         <img
                           src={item.thumbnail}
                           alt={item.name}
+                          referrerPolicy="no-referrer"
                           className="w-full h-full object-cover"
                         />
                       ) : isImg ? (
