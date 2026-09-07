@@ -52,6 +52,8 @@ export class NetworkClient {
         data = await res.text();
       } else if (options?.responseType === 'blob') {
         data = await res.blob();
+      } else if (options?.responseType === 'arraybuffer') {
+        data = await res.arrayBuffer();
       } else {
         data = await res.json().catch(() => null);
       }
@@ -70,8 +72,63 @@ export class NetworkClient {
   }
 
   /**
+   * Unified binary / ArrayBuffer fetcher for PDF files & raw documents
+   */
+  static async getArrayBuffer(url: string, headers?: Record<string, string>): Promise<ArrayBuffer> {
+    const reqHeaders = {
+      'User-Agent': this.defaultUserAgent,
+      ...(headers || {})
+    };
+
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const res = await CapacitorHttp.get({
+          url,
+          headers: reqHeaders,
+          responseType: 'arraybuffer'
+        });
+
+        if (res.data instanceof ArrayBuffer) {
+          return res.data;
+        }
+
+        if (typeof res.data === 'string') {
+          // Decode base64 to ArrayBuffer
+          try {
+            const binaryString = atob(res.data);
+            const len = binaryString.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+              bytes[i] = binaryString.charCodeAt(i);
+            }
+            return bytes.buffer;
+          } catch {
+            // Raw binary string fallback
+            const len = res.data.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+              bytes[i] = res.data.charCodeAt(i);
+            }
+            return bytes.buffer;
+          }
+        }
+      } catch (nativeErr) {
+        console.warn('CapacitorHttp getArrayBuffer failed, trying fetch fallback:', nativeErr);
+      }
+    }
+
+    // Standard / fallback fetch
+    const res = await fetch(url, { headers: reqHeaders });
+    if (!res.ok) {
+      throw new Error(`下载文件失败 (HTTP ${res.status})`);
+    }
+    return await res.arrayBuffer();
+  }
+
+  /**
    * Unified POST request
    */
+
   static async post<T = any>(
     url: string,
     data?: any,

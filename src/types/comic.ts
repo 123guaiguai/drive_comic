@@ -28,6 +28,7 @@ export interface DriveItem {
   driveType: CloudDriveType;
   thumbnail?: string;
   hasImages?: boolean;
+  isPdf?: boolean;
 }
 
 export interface ComicBook {
@@ -36,6 +37,7 @@ export interface ComicBook {
   driveType: CloudDriveType;
   path: string;
   coverUrl?: string;
+  isPdf?: boolean;
   lastReadChapterId?: string;
   lastReadChapterTitle?: string;
   lastReadPageIndex?: number;
@@ -49,6 +51,7 @@ export interface ChapterItem {
   path: string;
   driveType: CloudDriveType;
   fileCount?: number;
+  isPdf?: boolean;
 }
 
 export interface ComicPage {
@@ -60,6 +63,7 @@ export interface ComicPage {
   thumbnailUrl?: string;
   loaded?: boolean;
   error?: boolean;
+  isPdfPage?: boolean;
 }
 
 export type ReadingMode = 'webtoon' | 'right-to-left' | 'left-to-right';
@@ -83,4 +87,6 @@ export interface ReadHistoryItem {
   totalPages: number;
   timestamp: number;
   coverUrl?: string;
+  isPdf?: boolean;
 }
+

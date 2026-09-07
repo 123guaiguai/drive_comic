@@ -3,7 +3,7 @@ import { BaiduService } from './baiduService';
 import { QuarkService } from './quarkService';
 import { StorageService } from './storage';
 import { WebDavService } from './webdavService';
-import { isImageFile, naturalCompare } from './naturalSort';
+import { isImageFile, isPdfFile, naturalCompare } from './naturalSort';
 
 export class DriveManager {
   private static currentAccount: CloudAccount | null = null;
@@ -46,6 +46,33 @@ export class DriveManager {
 
   static getActiveAccount(): CloudAccount | null {
     return this.currentAccount;
+  }
+
+  static isPdf(itemPathOrName: string): boolean {
+    return isPdfFile(itemPathOrName);
+  }
+
+  static async getPdfBuffer(fileIdOrPath: string): Promise<ArrayBuffer> {
+    if (!this.currentAccount) {
+      throw new Error('未选择或未连接网盘账号');
+    }
+
+    if (this.currentAccount.type === 'quark') {
+      if (!this.quarkService) throw new Error('夸克网盘未就绪');
+      return await this.quarkService.getFileArrayBuffer(fileIdOrPath);
+    }
+
+    if (this.currentAccount.type === 'baidu') {
+      if (!this.baiduService) throw new Error('百度网盘未就绪');
+      return await this.baiduService.getFileArrayBuffer(fileIdOrPath);
+    }
+
+    if (this.currentAccount.type === 'webdav') {
+      if (!this.webdavService) throw new Error('WebDAV 服务未就绪');
+      return await this.webdavService.getFileArrayBuffer(fileIdOrPath);
+    }
+
+    throw new Error('不支持的网盘类型');
   }
 
   static async listFolder(folderIdOrPath: string = ''): Promise<{ items: DriveItem[]; hasMore?: boolean }> {
@@ -143,3 +170,4 @@ export class DriveManager {
     return pages;
   }
 }
+

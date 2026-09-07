@@ -1,5 +1,5 @@
 import { DriveItem, ComicPage } from '../types/comic';
-import { isImageFile, naturalCompare } from './naturalSort';
+import { isImageFile, isPdfFile, naturalCompare } from './naturalSort';
 import { NetworkClient } from './network';
 
 export class QuarkService {
@@ -81,6 +81,7 @@ export class QuarkService {
 
     const items: DriveItem[] = rawList.map((item) => {
       const isDir = item.file_type === 0 || item.format_type === 'folder';
+      const isPdf = !isDir && isPdfFile(item.file_name);
       return {
         id: item.fid,
         name: item.file_name,
@@ -90,7 +91,8 @@ export class QuarkService {
         updatedAt: item.updated_at,
         driveType: 'quark',
         thumbnail: item.thumbnail || undefined,
-        hasImages: isDir ? undefined : isImageFile(item.file_name)
+        hasImages: isDir ? undefined : isImageFile(item.file_name),
+        isPdf
       };
     });
 
@@ -181,4 +183,28 @@ export class QuarkService {
 
     return result;
   }
+
+  /**
+   * Get direct download url for a single file (e.g. PDF)
+   */
+  async getPdfDownloadUrl(fid: string): Promise<string> {
+    const map = await this.batchGetDownloadUrls([fid]);
+    const url = map[fid];
+    if (!url) {
+      throw new Error('获取夸克网盘文件下载直链失败');
+    }
+    return url;
+  }
+
+  /**
+   * Download file binary data as ArrayBuffer
+   */
+  async getFileArrayBuffer(fid: string): Promise<ArrayBuffer> {
+    const downloadUrl = await this.getPdfDownloadUrl(fid);
+    return await NetworkClient.getArrayBuffer(downloadUrl, {
+      ...this.getHeaders(),
+      'Referer': 'https://pan.quark.cn/'
+    });
+  }
 }
+

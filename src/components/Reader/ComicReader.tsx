@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ComicPage, ReaderSettings } from '../../types/comic';
 import { DriveManager } from '../../services/driveManager';
+import { PdfService } from '../../services/pdfService';
+import { isPdfFile } from '../../services/naturalSort';
 import { StorageService } from '../../services/storage';
 import { ReaderHUD } from './ReaderHUD';
 import { WebtoonMode } from './WebtoonMode';
@@ -11,7 +13,7 @@ import { RefreshCw, AlertCircle, ArrowLeft } from 'lucide-react';
 interface ComicReaderProps {
   comicId: string;
   comicTitle: string;
-  currentChapter: { id: string; name: string; path: string };
+  currentChapter: { id: string; name: string; path: string; isPdf?: boolean };
   initialPage?: number;
   prevChapter?: { id: string; name: string; path: string };
   nextChapter?: { id: string; name: string; path: string };
@@ -35,12 +37,15 @@ export const ComicReader: React.FC<ComicReaderProps> = ({
   const [currentPage, setCurrentPage] = useState(initialPage);
   const [targetPage, setTargetPage] = useState<number | undefined>(initialPage);
   const [loading, setLoading] = useState(true);
+  const [loadingText, setLoadingText] = useState('正在解析漫画章节图片...');
   const [error, setError] = useState<string | null>(null);
   const [showHUD, setShowHUD] = useState(false);
   const [isChapterModalOpen, setIsChapterModalOpen] = useState(false);
   const [localChapters, setLocalChapters] = useState<{ id: string; name: string; path: string }[]>(
     allChapters || []
   );
+
+  const isPdfComic = isPdfFile(currentChapter.name || '') || isPdfFile(currentChapter.path || '') || !!currentChapter.isPdf;
 
   // Sync or discover sibling chapters
   useEffect(() => {
@@ -114,19 +119,55 @@ export const ComicReader: React.FC<ComicReaderProps> = ({
     StorageService.saveSettings(partial).then(setSettings);
   };
 
-  // Load Chapter Pages
+  // Close PDF session on unmount or chapter change
+  useEffect(() => {
+    return () => {
+      PdfService.closeActiveSession();
+    };
+  }, [currentChapter.id]);
+
+  // Load Chapter Pages (Supports standard images & PDF manga)
   const loadPages = async () => {
     setLoading(true);
     setError(null);
+
     try {
-      const pageList = await DriveManager.getChapterPages(currentChapter.id);
-      if (pageList.length === 0) {
-        setError('该文件夹中未找到支持的漫画图片（支持 jpg, png, webp, gif 等）');
-      } else {
-        setPages(pageList);
-        const validPage = Math.min(Math.max(1, initialPage), pageList.length);
+      if (isPdfComic) {
+        setLoadingText('正在从网盘下载并解析 PDF 漫画...');
+        const buffer = await DriveManager.getPdfBuffer(currentChapter.id);
+        setLoadingText('正在渲染 PDF 漫画高清页面...');
+        const session = await PdfService.loadPdfFromBuffer(buffer);
+
+        if (session.totalPages === 0) {
+          throw new Error('PDF 文件为空或无法解析有效页面');
+        }
+
+        const initialPages = session.generateComicPages(currentChapter.name);
+        setPages(initialPages);
+
+        const validPage = Math.min(Math.max(1, initialPage), session.totalPages);
         setCurrentPage(validPage);
         setTargetPage(validPage);
+
+        // Render current page immediately
+        const firstUrl = await session.renderPage(validPage);
+        setPages((prev) =>
+          prev.map((p) => (p.index === validPage ? { ...p, url: firstUrl, downloadUrl: firstUrl, loaded: true } : p))
+        );
+
+        // Preload nearby pages
+        session.preloadPages(validPage, 3);
+      } else {
+        setLoadingText('正在解析漫画章节图片...');
+        const pageList = await DriveManager.getChapterPages(currentChapter.id);
+        if (pageList.length === 0) {
+          setError('该文件夹中未找到支持的漫画图片（支持 jpg, png, webp, gif 等）');
+        } else {
+          setPages(pageList);
+          const validPage = Math.min(Math.max(1, initialPage), pageList.length);
+          setCurrentPage(validPage);
+          setTargetPage(validPage);
+        }
       }
     } catch (e: any) {
       setError(e.message || '加载漫画页面失败');
@@ -139,10 +180,36 @@ export const ComicReader: React.FC<ComicReaderProps> = ({
     loadPages();
   }, [currentChapter.id]);
 
+  // Dynamic on-demand preloading for PDF pages
+  useEffect(() => {
+    const session = PdfService.getActiveSession();
+    if (!isPdfComic || !session || pages.length === 0) return;
+
+    session.preloadPages(currentPage, 3);
+
+    // Check if any nearby page rendered in background, sync URL to state
+    const range = 3;
+    const minP = Math.max(1, currentPage - range);
+    const maxP = Math.min(pages.length, currentPage + range);
+
+    for (let p = minP; p <= maxP; p++) {
+      if (!pages[p - 1]?.url) {
+        session.renderPage(p).then((url) => {
+          setPages((prev) =>
+            prev.map((item) => (item.index === p ? { ...item, url, downloadUrl: url, loaded: true } : item))
+          );
+        }).catch(() => {});
+      }
+    }
+  }, [currentPage, isPdfComic, pages.length]);
+
   // Record reading progress to history
   useEffect(() => {
     if (pages.length > 0 && currentPage >= 1) {
       const activeAccount = DriveManager.getActiveAccount();
+      const firstPage = pages[0];
+      const cover = firstPage?.thumbnailUrl || firstPage?.url;
+
       StorageService.updateHistory({
         comicId,
         comicTitle,
@@ -153,16 +220,35 @@ export const ComicReader: React.FC<ComicReaderProps> = ({
         pageIndex: currentPage,
         totalPages: pages.length,
         timestamp: Date.now(),
-        coverUrl: pages[0]?.thumbnailUrl || pages[0]?.url
+        coverUrl: cover || undefined,
+        isPdf: isPdfComic
       });
     }
-  }, [currentPage, pages.length, currentChapter.id]);
+  }, [currentPage, pages.length, currentChapter.id, isPdfComic]);
 
   const handlePageVisible = (index: number) => {
     setCurrentPage(index);
   };
 
-  const handleRetryPage = (pageId: string) => {
+  const handleRetryPage = async (pageId: string) => {
+    const targetPageObj = pages.find((p) => p.id === pageId);
+    if (!targetPageObj) return;
+
+    if (isPdfComic) {
+      const session = PdfService.getActiveSession();
+      if (session) {
+        try {
+          const url = await session.renderPage(targetPageObj.index);
+          setPages((prev) =>
+            prev.map((p) => (p.id === pageId ? { ...p, error: false, url, downloadUrl: url, loaded: true } : p))
+          );
+          return;
+        } catch {
+          // retry failed
+        }
+      }
+    }
+
     setPages((prev) =>
       prev.map((p) => (p.id === pageId ? { ...p, error: false, url: `${p.url}#retry=${Date.now()}` } : p))
     );
@@ -182,10 +268,11 @@ export const ComicReader: React.FC<ComicReaderProps> = ({
       {loading && (
         <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
           <RefreshCw className="w-9 h-9 animate-spin text-indigo-500 mb-3" />
-          <p className="text-sm font-medium">正在解析漫画章节图片...</p>
+          <p className="text-sm font-medium">{loadingText}</p>
           <p className="text-xs text-gray-500 mt-1">{currentChapter.name}</p>
         </div>
       )}
+
 
       {/* Error state */}
       {!loading && error && (

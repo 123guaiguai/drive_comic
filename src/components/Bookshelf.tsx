@@ -1,6 +1,7 @@
 import React from 'react';
-import { BookMarked, Play, Trash2, Folder, Sparkles, HardDrive } from 'lucide-react';
+import { BookMarked, Play, Trash2, Folder, Sparkles, HardDrive, FileText } from 'lucide-react';
 import { ComicBook } from '../types/comic';
+import { isPdfFile } from '../services/naturalSort';
 
 interface BookshelfProps {
   books: ComicBook[];
@@ -25,7 +26,7 @@ export const Bookshelf: React.FC<BookshelfProps> = ({
         </div>
         <h3 className="text-lg font-bold text-gray-200">书架暂无漫画</h3>
         <p className="text-sm text-gray-400 mt-2 mb-6">
-          连接你的百度或夸克网盘，在网盘目录中将喜欢的漫画文件夹一键加入书架，随时继续阅读。
+          连接你的百度、夸克或 WebDAV 网盘，在网盘目录中将喜欢的漫画文件夹或 PDF 一键加入书架，随时继续阅读。
         </p>
         <button
           onClick={onNavigateToExplorer}
@@ -51,6 +52,7 @@ export const Bookshelf: React.FC<BookshelfProps> = ({
 
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
         {books.map((book) => {
+          const isPdf = book.isPdf || isPdfFile(book.title) || isPdfFile(book.path);
           const hasProgress = book.lastReadChapterTitle && book.lastReadPageIndex !== undefined;
 
           return (
@@ -72,17 +74,26 @@ export const Bookshelf: React.FC<BookshelfProps> = ({
                   />
                 ) : (
                   <div className="flex flex-col items-center justify-center p-4 text-center">
-                    <Folder className="w-10 h-10 text-indigo-400/50 mb-2" />
+                    {isPdf ? (
+                      <FileText className="w-10 h-10 text-rose-400/60 mb-2" />
+                    ) : (
+                      <Folder className="w-10 h-10 text-indigo-400/50 mb-2" />
+                    )}
                     <span className="text-xs text-gray-400 line-clamp-2">{book.title}</span>
                   </div>
                 )}
 
-                {/* Drive badge */}
-                <div className="absolute top-2 left-2">
+                {/* Drive & PDF badge */}
+                <div className="absolute top-2 left-2 flex items-center gap-1">
                   <span className="text-[10px] bg-black/60 backdrop-blur-md text-gray-200 px-1.5 py-0.5 rounded flex items-center gap-1">
                     <HardDrive className="w-2.5 h-2.5 text-indigo-400" />
                     {book.driveType === 'quark' ? '夸克' : book.driveType === 'baidu' ? '百度' : 'WebDAV'}
                   </span>
+                  {isPdf && (
+                    <span className="text-[10px] bg-rose-600/80 backdrop-blur-md text-white font-mono px-1 py-0.5 rounded">
+                      PDF
+                    </span>
+                  )}
                 </div>
 
                 {/* Hover / Play Overlay */}
@@ -115,14 +126,20 @@ export const Bookshelf: React.FC<BookshelfProps> = ({
 
                 {/* Actions */}
                 <div className="flex items-center justify-between mt-3 pt-2 border-t border-gray-800/60">
-                  <button
-                    onClick={() => onExploreBookFolder(book)}
-                    className="text-[11px] text-gray-400 hover:text-gray-200 flex items-center gap-1 transition"
-                    title="浏览章节目录"
-                  >
-                    <Folder className="w-3.5 h-3.5" />
-                    <span>选集</span>
-                  </button>
+                  {!isPdf ? (
+                    <button
+                      onClick={() => onExploreBookFolder(book)}
+                      className="text-[11px] text-gray-400 hover:text-gray-200 flex items-center gap-1 transition"
+                      title="浏览章节目录"
+                    >
+                      <Folder className="w-3.5 h-3.5" />
+                      <span>选集</span>
+                    </button>
+                  ) : (
+                    <span className="text-[10px] text-rose-400/80 font-mono">
+                      PDF 漫画单行本
+                    </span>
+                  )}
 
                   <button
                     onClick={() => onRemoveBook(book.id)}

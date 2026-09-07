@@ -18,3 +18,12 @@ export function isImageFile(filename: string): boolean {
   const ext = filename.split('.').pop()?.toLowerCase();
   return ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'avif'].includes(ext || '');
 }
+
+/**
+ * Checks if a filename is a PDF document based on its extension.
+ */
+export function isPdfFile(filename: string): boolean {
+  const ext = filename.split('.').pop()?.toLowerCase();
+  return ext === 'pdf';
+}
+

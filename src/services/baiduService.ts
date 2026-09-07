@@ -1,5 +1,5 @@
 import { DriveItem, ComicPage } from '../types/comic';
-import { isImageFile, naturalCompare } from './naturalSort';
+import { isImageFile, isPdfFile, naturalCompare } from './naturalSort';
 import { NetworkClient } from './network';
 
 export class BaiduService {
@@ -108,6 +108,7 @@ export class BaiduService {
         const isDir = item.isdir === 1;
         const rawThumb = item.thumbs?.url3 || item.thumbs?.url2 || item.thumbs?.url1;
         const hdThumb = rawThumb ? rawThumb.replace(/size=c\d+_u\d+/, 'size=c1600_u1600') : undefined;
+        const isPdf = !isDir && isPdfFile(item.server_filename);
 
         return {
           id: item.path,
@@ -118,7 +119,8 @@ export class BaiduService {
           updatedAt: item.server_mtime ? item.server_mtime * 1000 : undefined,
           driveType: 'baidu',
           thumbnail: hdThumb,
-          hasImages: isDir ? undefined : isImageFile(item.server_filename)
+          hasImages: isDir ? undefined : isImageFile(item.server_filename),
+          isPdf
         };
       });
 
@@ -155,6 +157,7 @@ export class BaiduService {
       const isDir = item.isdir === 1;
       const rawThumb = item.thumbs?.url3 || item.thumbs?.url2 || item.thumbs?.url1;
       const hdThumb = rawThumb ? rawThumb.replace(/size=c\d+_u\d+/, 'size=c1600_u1600') : undefined;
+      const isPdf = !isDir && isPdfFile(item.server_filename);
 
       return {
         id: item.path,
@@ -165,7 +168,8 @@ export class BaiduService {
         updatedAt: item.server_mtime ? item.server_mtime * 1000 : undefined,
         driveType: 'baidu',
         thumbnail: hdThumb,
-        hasImages: isDir ? undefined : isImageFile(item.server_filename)
+        hasImages: isDir ? undefined : isImageFile(item.server_filename),
+        isPdf
       };
     });
 
@@ -177,6 +181,7 @@ export class BaiduService {
 
     return { items };
   }
+
 
   /**
    * Get comic pages in a folder
@@ -202,6 +207,20 @@ export class BaiduService {
         thumbnailUrl: f.thumbnail
       };
     });
+  }
+
+  /**
+   * Download file binary data as ArrayBuffer
+   */
+  async getFileArrayBuffer(filePath: string): Promise<ArrayBuffer> {
+    if (this.accessToken) {
+      const url = `https://pan.baidu.com/rest/2.0/xpan/file?method=download&access_token=${this.accessToken}&path=${encodeURIComponent(filePath)}`;
+      return await NetworkClient.getArrayBuffer(url, this.getHeaders());
+    }
+
+    // Try web streaming download with cookie
+    const url = `https://pan.baidu.com/api/download?clienttype=0&app_id=250528&web=1&path=${encodeURIComponent(filePath)}`;
+    return await NetworkClient.getArrayBuffer(url, this.getHeaders());
   }
 
   private async batchGetFileMetas(fsids: string[]): Promise<Record<string, any>> {
@@ -242,3 +261,4 @@ export class BaiduService {
     return result;
   }
 }
+

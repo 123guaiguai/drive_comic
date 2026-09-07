@@ -367,6 +367,11 @@ export const WebtoonMode: React.FC<WebtoonModeProps> = ({
                   <RefreshCw className="w-3.5 h-3.5" /> 点击重试
                 </button>
               </div>
+            ) : !page.url ? (
+              <div className="w-full aspect-[2/3] max-w-xl bg-gray-900/60 border border-gray-800/60 rounded-xl flex flex-col items-center justify-center p-4 text-center m-2 animate-pulse">
+                <RefreshCw className="w-6 h-6 animate-spin text-indigo-400/70 mb-2" />
+                <p className="text-xs text-gray-400 font-medium">正在渲染第 {page.index} 页...</p>
+              </div>
             ) : (
               <img
                 src={page.url}
@@ -377,6 +382,7 @@ export const WebtoonMode: React.FC<WebtoonModeProps> = ({
                 onError={() => onRetryPage(page.id)}
               />
             )}
+
           </div>
         ))}
       </div>

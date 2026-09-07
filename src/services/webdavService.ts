@@ -1,5 +1,5 @@
 import { DriveItem, ComicPage } from '../types/comic';
-import { isImageFile, naturalCompare } from './naturalSort';
+import { isImageFile, isPdfFile, naturalCompare } from './naturalSort';
 import { NetworkClient } from './network';
 
 export class WebDavService {
@@ -101,6 +101,7 @@ export class WebDavService {
       const size = sizeStr ? parseInt(sizeStr, 10) : undefined;
 
       const fullItemPath = decodedHref;
+      const isPdf = !isDir && isPdfFile(name);
 
       items.push({
         id: fullItemPath,
@@ -109,7 +110,8 @@ export class WebDavService {
         isDir,
         size,
         driveType: 'webdav',
-        hasImages: isDir ? undefined : isImageFile(name)
+        hasImages: isDir ? undefined : isImageFile(name),
+        isPdf
       });
     }
 
@@ -120,6 +122,27 @@ export class WebDavService {
     });
 
     return { items };
+  }
+
+  getFileUrl(filePath: string): string {
+    const cleanPath = filePath.startsWith('/') ? filePath : '/' + filePath;
+    if (this.user && this.pass) {
+      const urlObj = new URL(this.url);
+      const authPrefix = `${encodeURIComponent(this.user)}:${encodeURIComponent(this.pass)}@`;
+      return `${urlObj.protocol}//${authPrefix}${urlObj.host}${urlObj.pathname.replace(/\/+$/, '')}${encodeURI(cleanPath)}`;
+    }
+    return `${this.url}${encodeURI(cleanPath)}`;
+  }
+
+  async getFileArrayBuffer(filePath: string): Promise<ArrayBuffer> {
+    const cleanPath = filePath.startsWith('/') ? filePath : '/' + filePath;
+    const downloadUrl = `${this.url}${encodeURI(cleanPath)}`;
+    const headers: Record<string, string> = {};
+    if (this.user && this.pass) {
+      const basic = btoa(`${this.user}:${this.pass}`);
+      headers['Authorization'] = `Basic ${basic}`;
+    }
+    return await NetworkClient.getArrayBuffer(downloadUrl, headers);
   }
 
   async getChapterPages(folderPath: string): Promise<ComicPage[]> {
@@ -150,3 +173,4 @@ export class WebDavService {
     }));
   }
 }
+
