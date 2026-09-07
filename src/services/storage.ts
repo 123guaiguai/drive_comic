@@ -160,4 +160,105 @@ export class StorageService {
     await this.setRaw(KEYS.SETTINGS, JSON.stringify(updated));
     return updated;
   }
+
+  // --- Backup & Restore ---
+  static async exportBackup(): Promise<string> {
+    const accounts = await this.getAccounts();
+    const bookshelf = await this.getBookshelf();
+    const history = await this.getHistory();
+    const settings = await this.getSettings();
+    const currentAccountId = await this.getCurrentAccountId();
+
+    const backupData = {
+      app: 'CloudComic',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      currentAccountId,
+      accounts,
+      bookshelf,
+      history,
+      settings
+    };
+
+    return JSON.stringify(backupData, null, 2);
+  }
+
+  static async importBackup(jsonString: string): Promise<{
+    accountsCount: number;
+    bookshelfCount: number;
+    historyCount: number;
+  }> {
+    const data = JSON.parse(jsonString.trim());
+    if (!data || typeof data !== 'object') {
+      throw new Error('备份数据格式不正确');
+    }
+
+    let accountsCount = 0;
+    let bookshelfCount = 0;
+    let historyCount = 0;
+
+    // Restore accounts
+    if (Array.isArray(data.accounts)) {
+      const existingAccounts = await this.getAccounts();
+      const mergedMap = new Map<string, CloudAccount>();
+      for (const a of existingAccounts) mergedMap.set(a.id, a);
+      for (const a of data.accounts) {
+        if (a.id && a.name && a.type) {
+          mergedMap.set(a.id, a);
+          accountsCount++;
+        }
+      }
+      const newAccounts = Array.from(mergedMap.values());
+      await this.setRaw(KEYS.ACCOUNTS, JSON.stringify(newAccounts));
+
+      if (data.currentAccountId && mergedMap.has(data.currentAccountId)) {
+        await this.setCurrentAccountId(data.currentAccountId);
+      } else if (newAccounts.length > 0) {
+        await this.setCurrentAccountId(newAccounts[0].id);
+      }
+    }
+
+    // Restore bookshelf
+    if (Array.isArray(data.bookshelf)) {
+      const existingBooks = await this.getBookshelf();
+      const mergedBookMap = new Map<string, ComicBook>();
+      for (const b of existingBooks) mergedBookMap.set(b.id, b);
+      for (const b of data.bookshelf) {
+        if (b.id && b.title) {
+          mergedBookMap.set(b.id, b);
+          bookshelfCount++;
+        }
+      }
+      await this.setRaw(KEYS.BOOKSHELF, JSON.stringify(Array.from(mergedBookMap.values())));
+    }
+
+    // Restore history
+    if (Array.isArray(data.history)) {
+      const existingHistory = await this.getHistory();
+      const mergedHistMap = new Map<string, ReadHistoryItem>();
+      for (const h of existingHistory) mergedHistMap.set(h.comicId, h);
+      for (const h of data.history) {
+        if (h.comicId && h.comicTitle) {
+          mergedHistMap.set(h.comicId, h);
+          historyCount++;
+        }
+      }
+      const sortedHistory = Array.from(mergedHistMap.values()).sort(
+        (a, b) => (b.timestamp || 0) - (a.timestamp || 0)
+      );
+      await this.setRaw(KEYS.HISTORY, JSON.stringify(sortedHistory.slice(0, 100)));
+    }
+
+    // Restore settings
+    if (data.settings && typeof data.settings === 'object') {
+      await this.saveSettings(data.settings);
+    }
+
+    return {
+      accountsCount,
+      bookshelfCount,
+      historyCount
+    };
+  }
 }
+

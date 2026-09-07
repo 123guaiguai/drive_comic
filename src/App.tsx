@@ -342,7 +342,9 @@ export const App: React.FC = () => {
           setUpdateInfo(info);
           setIsUpdateModalOpen(true);
         }}
+        onReloadAllData={loadData}
       />
+
 
       {/* Fullscreen Comic Reader Modal */}
       {readingSession && (

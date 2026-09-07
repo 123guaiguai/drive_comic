@@ -1,9 +1,28 @@
 import React, { useState } from 'react';
-import { X, CheckCircle2, AlertCircle, Plus, Trash2, HelpCircle, HardDrive, RefreshCw, ArrowUpCircle, Info } from 'lucide-react';
+import {
+  X,
+  CheckCircle2,
+  AlertCircle,
+  Plus,
+  Trash2,
+  HelpCircle,
+  HardDrive,
+  RefreshCw,
+  ArrowUpCircle,
+  Info,
+  Edit3,
+  Download,
+  Upload,
+  Copy,
+  Check,
+  Save,
+  FileJson
+} from 'lucide-react';
 import { CloudAccount, CloudDriveType } from '../types/comic';
 import { BaiduService } from '../services/baiduService';
 import { QuarkService } from '../services/quarkService';
 import { WebDavService } from '../services/webdavService';
+import { StorageService } from '../services/storage';
 import { UpdateService, CURRENT_VERSION, UpdateInfo } from '../services/updater';
 
 interface AccountModalProps {
@@ -15,6 +34,7 @@ interface AccountModalProps {
   onSelectAccount: (account: CloudAccount) => void;
   onDeleteAccount: (id: string) => void;
   onOpenUpdateModal?: (info: UpdateInfo) => void;
+  onReloadAllData?: () => void;
 }
 
 export const AccountModal: React.FC<AccountModalProps> = ({
@@ -25,14 +45,16 @@ export const AccountModal: React.FC<AccountModalProps> = ({
   onSaveAccount,
   onSelectAccount,
   onDeleteAccount,
-  onOpenUpdateModal
+  onOpenUpdateModal,
+  onReloadAllData
 }) => {
+  const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
   const [selectedType, setSelectedType] = useState<CloudDriveType>('quark');
   const [accountName, setAccountName] = useState('');
-  
+
   // Quark
   const [quarkCookie, setQuarkCookie] = useState('');
-  
+
   // Baidu
   const [baiduCookie, setBaiduCookie] = useState('');
   const [baiduToken, setBaiduToken] = useState('');
@@ -48,12 +70,46 @@ export const AccountModal: React.FC<AccountModalProps> = ({
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [showHelp, setShowHelp] = useState(false);
 
+  // Backup & Restore
+  const [showBackupSection, setShowBackupSection] = useState(false);
+  const [importJsonText, setImportJsonText] = useState('');
+  const [backupMessage, setBackupMessage] = useState<{ success: boolean; message: string } | null>(null);
+  const [copiedBackup, setCopiedBackup] = useState(false);
+
   // Version update check state
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [updateStatus, setUpdateStatus] = useState<{
     type: 'idle' | 'latest' | 'error';
     message?: string;
   }>({ type: 'idle' });
+
+  if (!isOpen) return null;
+
+  const handleStartEdit = (acc: CloudAccount) => {
+    setEditingAccountId(acc.id);
+    setSelectedType(acc.type);
+    setAccountName(acc.name);
+    setQuarkCookie(acc.quarkCookie || '');
+    setBaiduCookie(acc.baiduCookie || '');
+    setBaiduToken(acc.baiduAccessToken || '');
+    setBaiduMode(acc.baiduAccessToken ? 'token' : 'cookie');
+    setWebdavUrl(acc.webdavUrl || '');
+    setWebdavUser(acc.webdavUsername || '');
+    setWebdavPass(acc.webdavPassword || '');
+    setTestResult(null);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingAccountId(null);
+    setAccountName('');
+    setQuarkCookie('');
+    setBaiduCookie('');
+    setBaiduToken('');
+    setWebdavUrl('');
+    setWebdavUser('');
+    setWebdavPass('');
+    setTestResult(null);
+  };
 
   const handleManualCheckUpdate = async () => {
     setCheckingUpdate(true);
@@ -86,8 +142,6 @@ export const AccountModal: React.FC<AccountModalProps> = ({
       setCheckingUpdate(false);
     }
   };
-
-  if (!isOpen) return null;
 
   const handleTestConnection = async () => {
     setTesting(true);
@@ -141,8 +195,10 @@ export const AccountModal: React.FC<AccountModalProps> = ({
         ? '我的百度网盘'
         : '我的 WebDAV';
 
+    const accountId = editingAccountId || Date.now().toString();
+
     const newAccount: CloudAccount = {
-      id: Date.now().toString(),
+      id: accountId,
       name: accountName.trim() || defaultName,
       type: selectedType,
       quarkCookie: selectedType === 'quark' ? quarkCookie.trim() : undefined,
@@ -156,12 +212,65 @@ export const AccountModal: React.FC<AccountModalProps> = ({
     };
 
     onSaveAccount(newAccount);
-    // Reset form
-    setAccountName('');
-    setQuarkCookie('');
-    setBaiduCookie('');
-    setBaiduToken('');
-    setTestResult(null);
+    handleCancelEdit();
+  };
+
+  // Export Backup
+  const handleExportBackup = async () => {
+    try {
+      const json = await StorageService.exportBackup();
+      if (navigator.clipboard) {
+        await navigator.clipboard.writeText(json);
+        setCopiedBackup(true);
+        setTimeout(() => setCopiedBackup(false), 3000);
+      }
+
+      // Also trigger browser file download for backup file
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `CloudComic_Backup_${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      setBackupMessage({
+        success: true,
+        message: '备份数据已复制到剪贴板，并已下载备份文件！'
+      });
+    } catch (e: any) {
+      setBackupMessage({
+        success: false,
+        message: e.message || '导出备份失败'
+      });
+    }
+  };
+
+  // Import Backup
+  const handleImportBackup = async () => {
+    if (!importJsonText.trim()) {
+      setBackupMessage({ success: false, message: '请先粘贴备份 JSON 文本' });
+      return;
+    }
+
+    try {
+      const res = await StorageService.importBackup(importJsonText);
+      setBackupMessage({
+        success: true,
+        message: `成功恢复: ${res.accountsCount} 个网盘账号，${res.bookshelfCount} 本书架，${res.historyCount} 条历史！`
+      });
+      setImportJsonText('');
+      if (onReloadAllData) {
+        onReloadAllData();
+      }
+    } catch (e: any) {
+      setBackupMessage({
+        success: false,
+        message: e.message || '解析备份数据失败，请确认格式正确'
+      });
+    }
   };
 
   return (
@@ -171,7 +280,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800 bg-[#1f1f25]">
           <div className="flex items-center gap-2">
             <HardDrive className="w-5 h-5 text-indigo-400" />
-            <h2 className="text-base font-bold text-gray-100">网盘账号管理</h2>
+            <h2 className="text-base font-bold text-gray-100">网盘账号与配置管理</h2>
           </div>
           <button
             onClick={onClose}
@@ -185,32 +294,40 @@ export const AccountModal: React.FC<AccountModalProps> = ({
           {/* Saved Accounts List */}
           {accounts.length > 0 && (
             <div>
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2">
-                已保存网盘
-              </h3>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400">
+                  已保存网盘 ({accounts.length})
+                </h3>
+                <span className="text-[11px] text-gray-500">点击名称切换，点击笔图标编辑</span>
+              </div>
+
               <div className="space-y-2">
                 {accounts.map((acc) => {
                   const isCur = activeAccount?.id === acc.id;
+                  const isEditingThis = editingAccountId === acc.id;
+
                   return (
                     <div
                       key={acc.id}
                       className={`flex items-center justify-between p-3 rounded-xl border transition ${
-                        isCur
+                        isEditingThis
+                          ? 'bg-amber-950/30 border-amber-500/50'
+                          : isCur
                           ? 'bg-indigo-950/40 border-indigo-500/50'
                           : 'bg-gray-800/40 border-gray-800 hover:border-gray-700'
                       }`}
                     >
                       <button
                         onClick={() => onSelectAccount(acc)}
-                        className="flex-1 flex items-center gap-3 text-left"
+                        className="flex-1 flex items-center gap-3 text-left min-w-0"
                       >
                         <div
-                          className={`w-3 h-3 rounded-full ${
+                          className={`w-3 h-3 rounded-full flex-shrink-0 ${
                             isCur ? 'bg-indigo-400 ring-4 ring-indigo-500/20' : 'bg-gray-600'
                           }`}
                         />
-                        <div>
-                          <p className="text-sm font-semibold text-gray-200">{acc.name}</p>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-gray-200 truncate">{acc.name}</p>
                           <p className="text-xs text-gray-400">
                             {acc.type === 'quark'
                               ? '夸克网盘'
@@ -221,13 +338,30 @@ export const AccountModal: React.FC<AccountModalProps> = ({
                         </div>
                       </button>
 
-                      <button
-                        onClick={() => onDeleteAccount(acc.id)}
-                        className="p-2 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition"
-                        title="删除账号"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      <div className="flex items-center gap-1 pl-2">
+                        <button
+                          onClick={() => handleStartEdit(acc)}
+                          className={`p-1.5 rounded-lg transition ${
+                            isEditingThis
+                              ? 'text-amber-400 bg-amber-500/20'
+                              : 'text-gray-400 hover:text-indigo-300 hover:bg-gray-700'
+                          }`}
+                          title="编辑网盘配置"
+                        >
+                          <Edit3 className="w-4 h-4" />
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            if (editingAccountId === acc.id) handleCancelEdit();
+                            onDeleteAccount(acc.id);
+                          }}
+                          className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition"
+                          title="删除账号"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
                   );
                 })}
@@ -235,20 +369,43 @@ export const AccountModal: React.FC<AccountModalProps> = ({
             </div>
           )}
 
-          {/* Add New Account Form */}
+          {/* Add / Edit Account Form */}
           <div className="bg-gray-900/60 border border-gray-800 rounded-xl p-4 space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-gray-200 flex items-center gap-1.5">
-                <Plus className="w-4 h-4 text-indigo-400" /> 添加网盘账号
+                {editingAccountId ? (
+                  <>
+                    <Edit3 className="w-4 h-4 text-amber-400" />
+                    <span>编辑网盘配置</span>
+                  </>
+                ) : (
+                  <>
+                    <Plus className="w-4 h-4 text-indigo-400" />
+                    <span>添加网盘账号</span>
+                  </>
+                )}
               </h3>
-              <button
-                type="button"
-                onClick={() => setShowHelp(!showHelp)}
-                className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
-              >
-                <HelpCircle className="w-3.5 h-3.5" />
-                <span>配置帮助</span>
-              </button>
+
+              <div className="flex items-center gap-2">
+                {editingAccountId && (
+                  <button
+                    type="button"
+                    onClick={handleCancelEdit}
+                    className="text-xs text-gray-400 hover:text-gray-200 bg-gray-800 px-2 py-0.5 rounded transition"
+                  >
+                    取消编辑
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setShowHelp(!showHelp)}
+                  className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
+                >
+                  <HelpCircle className="w-3.5 h-3.5" />
+                  <span>配置帮助</span>
+                </button>
+              </div>
             </div>
 
             {/* Help box */}
@@ -469,11 +626,84 @@ export const AccountModal: React.FC<AccountModalProps> = ({
               <button
                 type="button"
                 onClick={handleSave}
-                className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white py-2.5 rounded-xl text-xs font-semibold transition active:scale-95 shadow-lg shadow-indigo-600/30"
+                className="flex-1 flex items-center justify-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white py-2.5 rounded-xl text-xs font-semibold transition active:scale-95 shadow-lg shadow-indigo-600/30"
               >
-                保存并连接
+                <Save className="w-4 h-4" />
+                <span>{editingAccountId ? '保存修改' : '保存并连接'}</span>
               </button>
             </div>
+          </div>
+
+          {/* Backup & Restore Section */}
+          <div className="bg-gray-900/40 border border-gray-800 rounded-xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <FileJson className="w-4 h-4 text-emerald-400" />
+                <span className="text-xs font-semibold text-gray-300">本地备份与配置迁移</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowBackupSection(!showBackupSection)}
+                className="text-xs text-indigo-400 hover:text-indigo-300"
+              >
+                {showBackupSection ? '收起' : '展开备份工具'}
+              </button>
+            </div>
+
+            {showBackupSection && (
+              <div className="pt-2 border-t border-gray-800/80 space-y-3 animate-fade-in">
+                <p className="text-[11px] text-gray-400 leading-relaxed">
+                  在卸载或更换手机前，可一键导出所有网盘账号与书架数据。重装后粘贴备份即可 1 秒恢复！
+                </p>
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={handleExportBackup}
+                    className="flex-1 flex items-center justify-center gap-1.5 bg-gray-800 hover:bg-gray-700 text-gray-200 py-2 rounded-lg text-xs font-medium border border-gray-700 transition"
+                  >
+                    {copiedBackup ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Download className="w-3.5 h-3.5 text-indigo-400" />}
+                    <span>{copiedBackup ? '已复制备份' : '导出备份文件 / 剪贴板'}</span>
+                  </button>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-[11px] text-gray-400">导入备份数据 (粘贴 JSON)：</label>
+                  <textarea
+                    rows={3}
+                    placeholder="在此粘贴导出的备份 JSON 文本..."
+                    value={importJsonText}
+                    onChange={(e) => setImportJsonText(e.target.value)}
+                    className="w-full bg-gray-800/80 border border-gray-700/80 rounded-lg p-2.5 text-xs text-gray-100 font-mono placeholder-gray-500 focus:outline-none focus:border-indigo-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleImportBackup}
+                    className="w-full flex items-center justify-center gap-1.5 bg-emerald-700 hover:bg-emerald-600 text-white py-2 rounded-lg text-xs font-semibold shadow transition"
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>立即导入恢复</span>
+                  </button>
+                </div>
+
+                {backupMessage && (
+                  <div
+                    className={`p-2.5 rounded-lg flex items-center gap-2 text-xs ${
+                      backupMessage.success
+                        ? 'bg-emerald-950/40 text-emerald-300 border border-emerald-500/30'
+                        : 'bg-rose-950/40 text-rose-300 border border-rose-500/30'
+                    }`}
+                  >
+                    {backupMessage.success ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+                    )}
+                    <span>{backupMessage.message}</span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* App Version & Update Card */}
